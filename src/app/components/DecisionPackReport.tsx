@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   Download,
+  Mail,
   Check,
   Clock,
   AlertCircle,
@@ -255,16 +256,11 @@ export function DecisionPackReport({
           </button>
           <div className="flex items-start gap-3">
             <button
-              onClick={handleDownloadPDF}
-              disabled={isDownloadingPDF}
-              className={`px-5 py-2.5 text-sm font-semibold rounded-xl transition-all flex items-center gap-2 ${
-                isDownloadingPDF
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-gray-900 text-white hover:bg-gray-800 shadow-md hover:shadow-lg'
-              }`}
+              onClick={() => {}}
+              className="px-5 py-2.5 text-sm font-semibold rounded-xl transition-all flex items-center gap-2 bg-gray-900 text-white hover:bg-gray-800 shadow-md hover:shadow-lg"
             >
-              <Download className="w-4 h-4" />
-              {isDownloadingPDF ? '다운로드 중...' : 'PDF 내보내기'}
+              <Mail className="w-4 h-4" />
+              이메일 전송
             </button>
             {/* <div className="relative">
               <button
