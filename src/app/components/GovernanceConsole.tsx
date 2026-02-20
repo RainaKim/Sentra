@@ -256,10 +256,15 @@ function extractStrategicGoals(result: DecisionResponse | null): StrategicGoal[]
 
   // Try goals_kpis.strategic_goals first (new backend structure)
   const goalsKpis = (result as Record<string, unknown>).goals_kpis as Record<string, unknown> | undefined;
+  console.log('[extractStrategicGoals] goals_kpis:', goalsKpis);
+  console.log('[extractStrategicGoals] strategic_goals:', goalsKpis?.strategic_goals);
+
   if (goalsKpis?.strategic_goals && Array.isArray(goalsKpis.strategic_goals)) {
+    console.log('[extractStrategicGoals] Found strategic goals:', goalsKpis.strategic_goals);
     return goalsKpis.strategic_goals as StrategicGoal[];
   }
 
+  console.log('[extractStrategicGoals] No strategic goals found, returning empty array');
   return [];
 }
 
@@ -466,29 +471,45 @@ function buildGraphData(
     edges.push({ from: 'actor', to: 'decision', color: '#D1D5DB', dashed: true });
   }
 
-  // Goals
-  const goals = extractGoals(result);
+  // Goals - prioritize strategic goals with status
+  const strategicGoals = extractStrategicGoals(result);
+  const fallbackGoals = extractGoals(result);
+  const goalsToDisplay = strategicGoals.length > 0
+    ? strategicGoals.map(sg => ({
+        statement: sg.name,
+        status: sg.status,
+        goal_id: sg.goal_id,
+      }))
+    : fallbackGoals;
+
   const goalPositions = [
     { x: 530, y: 95 },  // Top center
     { x: 530, y: 535 }, // Bottom center
     { x: 250, y: 200 }, // Left
   ];
-  goals.slice(0, 3).forEach((goal, idx) => {
+  goalsToDisplay.slice(0, 3).forEach((goal, idx) => {
     const pos = goalPositions[idx] ?? goalPositions[0];
+    const isConflict = 'status' in goal && goal.status === 'conflict';
+    const isAligned = 'status' in goal && goal.status === 'aligned';
+
     nodes.push({
       id: `goal-${idx}`,
       type: 'goal',
-      label: 'GOAL',
-      subLabel: goal.statement ?? 'Unknown',
+      label: isConflict ? 'GOAL (CONFLICT)' : isAligned ? 'GOAL (ALIGNED)' : 'GOAL',
+      subLabel: 'goal_id' in goal ? `${goal.goal_id}: ${goal.statement}` : goal.statement ?? 'Unknown',
       x: pos.x,
       y: pos.y,
-      color: { border: '#06B6D4', text: '#111827', label: '#0891B2' },
+      color: isConflict
+        ? { border: '#DC2626', text: '#111827', label: '#DC2626' }
+        : isAligned
+        ? { border: '#10B981', text: '#111827', label: '#10B981' }
+        : { border: '#06B6D4', text: '#111827', label: '#0891B2' },
     });
-    edges.push({ 
-      from: `goal-${idx}`, 
-      to: 'decision', 
-      color: idx === 0 ? '#3B82F6' : '#D1D5DB',
-      dashed: idx !== 0,
+    edges.push({
+      from: `goal-${idx}`,
+      to: 'decision',
+      color: isConflict ? '#DC2626' : idx === 0 ? '#3B82F6' : '#D1D5DB',
+      dashed: idx !== 0 && !isConflict,
     });
   });
 
@@ -689,6 +710,7 @@ export function GovernanceConsole() {
           onComplete: (result) => {
             fallbackTimers.forEach(clearTimeout);
             console.log('[GovernanceConsole] Full decision result:', result);
+            console.log('[GovernanceConsole] goals_kpis:', (result as Record<string, unknown>).goals_kpis);
             console.log('[GovernanceConsole] graph_payload:', result.graph_payload);
             console.log('[GovernanceConsole] graph_payload.nodes:', result.graph_payload?.nodes);
             console.log('[GovernanceConsole] decision.goals:', result.decision?.goals);
@@ -897,14 +919,16 @@ export function GovernanceConsole() {
       </div>
 
       {/* Main Layout - 3 Columns */}
-      <div className="flex h-[calc(100vh-3.5rem)]">
+      <div className="flex h-[calc(100vh-3.5rem)]" style={{ backgroundColor: '#F1F2F7' }}>
         {/* LEFT PANEL - Input Context & Extraction */}
-        <div className="w-[340px] bg-white border-r border-gray-200 overflow-y-auto">
-          <div className="p-6 space-y-6">
+        <div className="w-[420px] h-full">
+          <div className="p-4 h-full">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm h-full flex flex-col overflow-hidden">
+              <div className="p-6 space-y-6 overflow-y-auto flex-1">
             {/* Header */}
             <div className="flex items-center justify-between">
-              <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                입력 컨텍스트
+              <h2 className="text-xs font-semibold text-gray-900">
+                입력
               </h2>
               <span className="text-xs text-gray-400 font-mono">
                 REQ: 2048
@@ -962,20 +986,52 @@ export function GovernanceConsole() {
                     </div>
                   ))}
 
-                  {/* Goals - only show if statement exists */}
-                  {extractGoals(decisionResult).filter(g => g.statement).map((goal, idx) => (
-                    <div key={`goal-${idx}`} className="flex items-center gap-2.5 bg-cyan-50 border border-cyan-200 rounded-xl px-3.5 py-2.5">
-                      <Target className="w-3.5 h-3.5 text-cyan-600" />
-                      <div className="flex-1">
-                        <div className="text-xs text-cyan-700 font-semibold">
-                          Goal
-                        </div>
-                        <div className="text-xs text-gray-600">
-                          {goal.statement}
+                  {/* Strategic Goals - show with alignment status */}
+                  {(() => {
+                    const strategicGoals = extractStrategicGoals(decisionResult);
+                    if (strategicGoals.length > 0) {
+                      return strategicGoals.map((goal, idx) => {
+                        const isConflict = goal.status === 'conflict';
+                        const bgColor = isConflict ? 'bg-red-50' : 'bg-green-50';
+                        const borderColor = isConflict ? 'border-red-200' : 'border-green-200';
+                        const iconColor = isConflict ? 'text-red-600' : 'text-green-600';
+                        const textColor = isConflict ? 'text-red-700' : 'text-green-700';
+                        return (
+                          <div key={`goal-${idx}`} className={`flex items-start gap-2.5 ${bgColor} border ${borderColor} rounded-xl px-3.5 py-2.5`}>
+                            <Target className={`w-3.5 h-3.5 ${iconColor} mt-0.5 flex-shrink-0`} />
+                            <div className="flex-1 min-w-0">
+                              <div className={`text-xs ${textColor} font-semibold flex items-center gap-2 flex-wrap`}>
+                                <span>{goal.name}</span>
+                                <span className="text-xs text-gray-500">({goal.goal_id})</span>
+                                <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${isConflict ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                  {isConflict ? 'CONFLICT' : 'ALIGNED'}
+                                </span>
+                              </div>
+                              {goal.reasoning && (
+                                <div className="text-xs text-gray-600 mt-1">
+                                  {goal.reasoning}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      });
+                    }
+                    // Fallback to old goals if no strategic goals
+                    return extractGoals(decisionResult).filter(g => g.statement).map((goal, idx) => (
+                      <div key={`goal-${idx}`} className="flex items-center gap-2.5 bg-cyan-50 border border-cyan-200 rounded-xl px-3.5 py-2.5">
+                        <Target className="w-3.5 h-3.5 text-cyan-600" />
+                        <div className="flex-1">
+                          <div className="text-xs text-cyan-700 font-semibold">
+                            Goal
+                          </div>
+                          <div className="text-xs text-gray-600">
+                            {goal.statement}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ));
+                  })()}
 
                   {/* Cost - only show if not Unknown */}
                   {extractCost(decisionResult) !== 'Unknown' && (
@@ -1154,11 +1210,13 @@ export function GovernanceConsole() {
                 </div>
               </div>
             )}
+              </div>
+            </div>
           </div>
         </div>
 
         {/* CENTER PANEL - Governance Mind Map */}
-        <div className="flex-1 bg-gray-50 overflow-hidden relative">
+        <div className="flex-1 overflow-hidden relative" style={{ backgroundColor: '#F1F2F7' }}>
           <div className="p-6 h-full flex flex-col">
             {/* Header with Stepper during analysis */}
             <div className="mb-4">
@@ -1685,12 +1743,14 @@ export function GovernanceConsole() {
         </div>
 
         {/* RIGHT PANEL - Rules, Approvals, Trace Log */}
-        <div className="w-[400px] bg-white border-l border-gray-200 overflow-y-auto">
-          <div className="p-6 space-y-6">
+        <div className="w-[420px] h-full">
+          <div className="p-4 h-full">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm h-full flex flex-col overflow-hidden">
+              <div className="p-6 space-y-6 overflow-y-auto flex-1">
             {/* Header */}
             <div className="flex items-center justify-between">
               <h2 className="text-xs font-semibold text-gray-900">
-                의사결정 검증 결과
+                검증 결과
               </h2>
             </div>
 
@@ -2020,11 +2080,17 @@ export function GovernanceConsole() {
                           });
                           if (triggeredRules.length > 0) {
                             const rule = triggeredRules[0];
-                            return `${rule.rule_id ?? 'R2'} 감지: ${rule.description ?? rule.name ?? '준법 및 윤리 검토 필요'}`;
+                            return `${rule.rule_id ?? ''} 감지: ${rule.description ?? rule.name ?? '규정 위반'}`.trim();
                           }
-                          return 'R2 감지: 준법 및 윤리 검토 필요';
+                          return '회사 정책 및 규정 준수 여부 검토';
                         })(),
-                        hasWarning: analysisStep >= 2
+                        hasWarning: (() => {
+                          const triggeredRules = (decisionResult?.governance?.all_rules ?? []).filter(r => {
+                            const s = r.status?.toUpperCase();
+                            return s === 'TRIGGERED' || s === 'VIOLATION';
+                          });
+                          return triggeredRules.length > 0;
+                        })()
                       },
                       {
                         step: 3,
@@ -2337,6 +2403,8 @@ export function GovernanceConsole() {
                 <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
                 LIVE MODE (EV)
               </span>
+            </div>
+              </div>
             </div>
           </div>
         </div>
