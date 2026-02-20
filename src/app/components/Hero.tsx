@@ -56,13 +56,6 @@ export function Hero() {
   const [fixturesError, setFixturesError] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Helper to pick 3 random fixtures from the full list
-  const pickRandomFixtures = (fixtures: DemoFixture[]) => {
-    if (fixtures.length <= 3) return fixtures;
-    const shuffled = [...fixtures].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, 3);
-  };
-
   // Fetch fixtures when selectedProfile changes
   useEffect(() => {
     if (!selectedProfile) {
@@ -75,7 +68,7 @@ export function Hero() {
 
     getFixtures(backendCompanyId)
       .then((fixtures) => {
-        setDisplayedFixtures(pickRandomFixtures(fixtures));
+        setDisplayedFixtures(fixtures); // Show all fixtures
         setFixturesError(false);
       })
       .catch((err) => {
@@ -670,8 +663,8 @@ export function Hero() {
               {/* Tab Content */}
               {activeTab === "text" ? (
                 <div className="space-y-4">
-                  {/* Textarea without integrated button */}
-                  <textarea
+                  {/* Textarea - commented out for demo */}
+                  {/* <textarea
                     ref={textareaRef}
                     disabled
                     placeholder="하단의 추천 의사결정에서 선택해 주세요."
@@ -681,38 +674,46 @@ export function Hero() {
                     onChange={(e) =>
                       setDecisionText(e.target.value)
                     }
-                  />
+                  /> */}
 
-                  {/* Suggested Decisions - show fixtures if loaded, otherwise show hardcoded suggestions */}
+                  {/* Dropdown Selector - show fixtures if loaded, otherwise show hardcoded suggestions */}
                   {!fixturesError && (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
                         추천 의사결정
                       </p>
-                      <div className="flex flex-wrap gap-2">
+                      <select
+                        value={decisionText}
+                        onChange={(e) => {
+                          const selectedValue = e.target.value;
+                          if (selectedValue) {
+                            setDecisionText(selectedValue);
+                          }
+                        }}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-700 bg-white focus:outline-none focus:border-gray-400 cursor-pointer"
+                      >
+                        <option value="" disabled>
+                          시나리오를 선택해주세요
+                        </option>
                         {displayedFixtures.length > 0
                           ? displayedFixtures.map((fixture) => (
-                              <button
-                                key={fixture.id}
-                                onClick={() => handleFixtureClick(fixture)}
-                                className="px-4 py-2 rounded-full bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-900 hover:text-white transition-all"
-                                title={fixture.text}
-                              >
+                              <option key={fixture.id} value={fixture.text}>
                                 {fixture.title}
-                              </button>
+                              </option>
                             ))
-                          : suggestedDecisions.map((suggestion) => (
-                              <button
-                                key={suggestion}
-                                onClick={() =>
-                                  handleSuggestionClick(suggestion)
-                                }
-                                className="px-4 py-2 rounded-full bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-900 hover:text-white transition-all"
-                              >
+                          : suggestedDecisions.map((suggestion, idx) => (
+                              <option key={idx} value={suggestion}>
                                 {suggestion}
-                              </button>
+                              </option>
                             ))}
-                      </div>
+                      </select>
+
+                      {/* Display full text description when selected */}
+                      {decisionText && (
+                        <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 text-sm text-gray-700 leading-relaxed">
+                          {decisionText}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
