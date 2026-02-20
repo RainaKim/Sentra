@@ -5,18 +5,32 @@ import {
   Lock,
   CheckCircle2,
   FileText,
-  Upload,
   Slack,
   BookOpen,
   Mail,
-  Github,
-  ListTodo,
+  Upload,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
+import { getCompanies, getFixtures } from "../../api/client";
+import type { DemoFixture } from "../../api/types";
 
 export function Hero() {
   const navigate = useNavigate();
+  // Map frontend profile IDs → backend company IDs (api_contract_v1.md)
+  const BACKEND_COMPANY_ID: Record<string, string> = {
+    nexus: "nexus_dynamics",
+    delaware: "delaware_gsa",
+    mayo: "mayo_central",
+  };
+
+  // Fetch companies on mount to validate backend connectivity.
+  useEffect(() => {
+    getCompanies().catch((err) =>
+      console.warn("[Hero] Backend unreachable, using local profiles:", err),
+    );
+  }, []);
+
   const [selectedIndustry, setSelectedIndustry] = useState<
     string | null
   >(null);
@@ -36,6 +50,49 @@ export function Hero() {
   >(null);
   const [showEnterprisePopup, setShowEnterprisePopup] =
     useState(false);
+
+  // Fixtures state
+  const [displayedFixtures, setDisplayedFixtures] = useState<DemoFixture[]>([]);
+  const [fixturesError, setFixturesError] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Helper to pick 3 random fixtures from the full list
+  const pickRandomFixtures = (fixtures: DemoFixture[]) => {
+    if (fixtures.length <= 3) return fixtures;
+    const shuffled = [...fixtures].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, 3);
+  };
+
+  // Fetch fixtures when selectedProfile changes
+  useEffect(() => {
+    if (!selectedProfile) {
+      setDisplayedFixtures([]);
+      setFixturesError(false);
+      return;
+    }
+
+    const backendCompanyId = BACKEND_COMPANY_ID[selectedProfile] ?? selectedProfile;
+
+    getFixtures(backendCompanyId)
+      .then((fixtures) => {
+        setDisplayedFixtures(pickRandomFixtures(fixtures));
+        setFixturesError(false);
+      })
+      .catch((err) => {
+        console.warn("[Hero] Failed to fetch fixtures:", err);
+        setDisplayedFixtures([]);
+        setFixturesError(true);
+      });
+  }, [selectedProfile]);
+
+  // Autofill textarea when fixture is clicked
+  const handleFixtureClick = (fixture: DemoFixture) => {
+    setDecisionText(fixture.text);
+    // Focus the textarea
+    setTimeout(() => {
+      textareaRef.current?.focus();
+    }, 0);
+  };
 
   const industries = [
     {
@@ -145,8 +202,7 @@ export function Hero() {
     }, 2000);
   };
 
-  const isInputValid =
-    decisionText.trim().length > 0 || uploadedFile !== null;
+  const isInputValid = decisionText.trim().length > 0;
 
   return (
     <section className="pt-32 pb-24 px-16 max-w-[1440px] mx-auto">
@@ -604,12 +660,8 @@ export function Hero() {
                   텍스트 입력
                 </button>
                 <button
-                  onClick={() => setActiveTab("pdf")}
-                  className={`px-6 py-2.5 rounded-lg font-semibold text-sm transition-all ${
-                    activeTab === "pdf"
-                      ? "bg-gray-900 text-white shadow-md"
-                      : "bg-gray-50 text-gray-600 hover:bg-gray-100"
-                  }`}
+                  disabled
+                  className="px-6 py-2.5 rounded-lg font-semibold text-sm bg-gray-50 text-gray-300 cursor-not-allowed"
                 >
                   PDF 업로드
                 </button>
@@ -620,6 +672,7 @@ export function Hero() {
                 <div className="space-y-4">
                   {/* Textarea without integrated button */}
                   <textarea
+                    ref={textareaRef}
                     placeholder="예시: 다음 분기 제품 가격을 20% 인상하여 EU 시장에서 매출 성장을 가속화한다."
                     className="w-full h-48 bg-gray-50 rounded-xl p-5 border border-gray-200 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-gray-400 resize-none"
                     value={decisionText}
@@ -628,25 +681,38 @@ export function Hero() {
                     }
                   />
 
-                  {/* Suggested Decisions */}
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      추천 의사결정
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {suggestedDecisions.map((suggestion) => (
-                        <button
-                          key={suggestion}
-                          onClick={() =>
-                            handleSuggestionClick(suggestion)
-                          }
-                          className="px-4 py-2 rounded-full bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-900 hover:text-white transition-all"
-                        >
-                          {suggestion}
-                        </button>
-                      ))}
+                  {/* Suggested Decisions - show fixtures if loaded, otherwise show hardcoded suggestions */}
+                  {!fixturesError && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                        추천 의사결정
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {displayedFixtures.length > 0
+                          ? displayedFixtures.map((fixture) => (
+                              <button
+                                key={fixture.id}
+                                onClick={() => handleFixtureClick(fixture)}
+                                className="px-4 py-2 rounded-full bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-900 hover:text-white transition-all"
+                                title={fixture.text}
+                              >
+                                {fixture.title}
+                              </button>
+                            ))
+                          : suggestedDecisions.map((suggestion) => (
+                              <button
+                                key={suggestion}
+                                onClick={() =>
+                                  handleSuggestionClick(suggestion)
+                                }
+                                className="px-4 py-2 rounded-full bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-900 hover:text-white transition-all"
+                              >
+                                {suggestion}
+                              </button>
+                            ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -727,7 +793,15 @@ export function Hero() {
                 disabled={!isInputValid}
                 onClick={() => {
                   if (isInputValid) {
-                    navigate("/console");
+                    navigate("/console", {
+                      state: {
+                        // Map UI profile ID to backend company ID
+                        companyId:
+                          BACKEND_COMPANY_ID[selectedProfile ?? ""] ??
+                          selectedProfile,
+                        decisionText,
+                      },
+                    });
                   }
                 }}
                 className={`w-full py-5 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
