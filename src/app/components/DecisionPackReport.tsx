@@ -651,7 +651,7 @@ export function DecisionPackReport({
             조직의 최종 의사결정은 승인 권한자에게 있습니다.
           </p>
           <p className="text-xs text-gray-400 font-mono tracking-wider">
-            CONFIDENTIAL · SENTRA
+            CONFIDENTIAL · DecisionGovernance AI
           </p>
         </div>
       </div>
@@ -762,7 +762,7 @@ function DemoDecisionPack({
         <div className="text-center py-8 border-t border-gray-200">
           <p className="text-xs text-gray-500 mb-2">본 보고서는 AI Governance 시스템에 의해 자동 생성되었습니다.</p>
           <p className="text-xs text-gray-500 mb-4">조직의 최종 의사결정은 승인 권한자에게 있습니다.</p>
-          <p className="text-xs text-gray-400 font-mono tracking-wider">CONFIDENTIAL · SENTRA</p>
+          <p className="text-xs text-gray-400 font-mono tracking-wider">CONFIDENTIAL · DecisionGovernance AI</p>
         </div>
       </div>
     </div>
