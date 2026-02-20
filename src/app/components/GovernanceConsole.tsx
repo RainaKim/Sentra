@@ -921,13 +921,13 @@ export function GovernanceConsole() {
       {/* Main Layout - 3 Columns */}
       <div className="flex h-[calc(100vh-3.5rem)]" style={{ backgroundColor: '#F1F2F7' }}>
         {/* LEFT PANEL - Input Context & Extraction */}
-        <div className="w-[420px] h-full">
-          <div className="p-4 h-full">
+        <div className="w-[450px] h-full">
+          <div className="pl-6 pr-2 pt-6 pb-4 h-full">
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm h-full flex flex-col overflow-hidden">
               <div className="p-6 space-y-6 overflow-y-auto flex-1">
             {/* Header */}
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-500 uppercase tracking-wider">
+              <h2 className="text-xl font-bold text-gray-900 uppercase tracking-wider">
                 입력
               </h2>
               <span className="text-xs text-gray-400 font-mono">
@@ -1216,11 +1216,12 @@ export function GovernanceConsole() {
         </div>
 
         {/* CENTER PANEL - Governance Mind Map */}
-        <div className="flex-1 overflow-hidden relative" style={{ backgroundColor: '#F1F2F7' }}>
-          <div className="p-4 h-full flex flex-col">
-            <div className="p-6 h-full flex flex-col">
+        <div className="flex-1" style={{ backgroundColor: '#F1F2F7' }}>
+          <div className="px-4 pt-6 pb-4 h-full">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm h-full flex flex-col overflow-hidden">
+              <div className="p-6 flex flex-col h-full">
             {/* Header with Stepper during analysis */}
-            <div className="mb-4">
+            <div className="mb-4 flex-shrink-0">
               {isAnalyzing && (
                 <div className="mb-4 bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
                   <div className="flex items-center gap-4">
@@ -1267,7 +1268,7 @@ export function GovernanceConsole() {
               )}
 
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-gray-500 uppercase tracking-wider">
+                <h2 className="text-xl font-bold text-gray-900 uppercase tracking-wider">
                   의사결정 지식 그래프
                 </h2>
 
@@ -1385,7 +1386,7 @@ export function GovernanceConsole() {
                         x={node.x}
                         y={node.y - 15}
                         fill={node.color.label}
-                        fontSize="10"
+                        fontSize="12"
                         textAnchor="middle"
                         fontWeight="600"
                       >
@@ -1395,7 +1396,7 @@ export function GovernanceConsole() {
                         x={node.x}
                         y={node.y + 10}
                         fill={node.color.text}
-                        fontSize="13"
+                        fontSize="16"
                         textAnchor="middle"
                         fontWeight="700"
                       >
@@ -1424,7 +1425,7 @@ export function GovernanceConsole() {
                           x={node.x}
                           y={node.y - nodeHeight / 2 + 18}
                           fill={node.color.label}
-                          fontSize="10"
+                          fontSize="12"
                           textAnchor="middle"
                           fontWeight="600"
                         >
@@ -1436,7 +1437,7 @@ export function GovernanceConsole() {
                             x={node.x}
                             y={node.y - nodeHeight / 2 + 36 + lineIdx * 16}
                             fill={node.color.text}
-                            fontSize="12"
+                            fontSize="14"
                             textAnchor="middle"
                             fontWeight="600"
                           >
@@ -1467,7 +1468,7 @@ export function GovernanceConsole() {
                           x={node.x}
                           y={node.y - nodeHeight / 2 + 22}
                           fill={node.color.label}
-                          fontSize="11"
+                          fontSize="13"
                           textAnchor="middle"
                           fontWeight="600"
                         >
@@ -1479,7 +1480,7 @@ export function GovernanceConsole() {
                             x={node.x}
                             y={node.y - nodeHeight / 2 + 45 + lineIdx * 18}
                             fill={node.color.text}
-                            fontSize="14"
+                            fontSize="16"
                             textAnchor="middle"
                             fontWeight="700"
                           >
@@ -1511,7 +1512,7 @@ export function GovernanceConsole() {
                           x={node.x}
                           y={node.y - nodeHeight / 2 + 18}
                           fill={node.color.label}
-                          fontSize="10"
+                          fontSize="12"
                           textAnchor="middle"
                           fontWeight="600"
                         >
@@ -1523,7 +1524,7 @@ export function GovernanceConsole() {
                             x={node.x}
                             y={node.y - nodeHeight / 2 + 36 + lineIdx * 14}
                             fill={node.color.text}
-                            fontSize="12"
+                            fontSize="14"
                             textAnchor="middle"
                             fontWeight="700"
                           >
@@ -1535,7 +1536,7 @@ export function GovernanceConsole() {
                             x={node.x}
                             y={node.y + nodeHeight / 2 - 12}
                             fill="#059669"
-                            fontSize="13"
+                            fontSize="15"
                             textAnchor="middle"
                             fontWeight="700"
                           >
@@ -1578,7 +1579,7 @@ export function GovernanceConsole() {
                           x={node.x}
                           y={node.y - nodeHeight / 2 + 18}
                           fill={node.color.label}
-                          fontSize="10"
+                          fontSize="12"
                           textAnchor="middle"
                           fontWeight="600"
                         >
@@ -1590,7 +1591,7 @@ export function GovernanceConsole() {
                             x={node.x}
                             y={node.y - nodeHeight / 2 + 36 + lineIdx * 14}
                             fill={node.color.text}
-                            fontSize="12"
+                            fontSize="14"
                             textAnchor="middle"
                             fontWeight="700"
                           >
@@ -1740,18 +1741,19 @@ export function GovernanceConsole() {
                 </div>
               </div>
             )}
+              </div>
             </div>
           </div>
         </div>
 
         {/* RIGHT PANEL - Rules, Approvals, Trace Log */}
-        <div className="w-[420px] h-full">
-          <div className="p-4 h-full">
+        <div className="w-[450px] h-full">
+          <div className="pl-2 pr-6 pt-6 pb-4 h-full">
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm h-full flex flex-col overflow-hidden">
               <div className="p-6 space-y-6 overflow-y-auto flex-1">
             {/* Header */}
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-500 uppercase tracking-wider">
+              <h2 className="text-xl font-bold text-gray-900 uppercase tracking-wider">
                 검증 결과
               </h2>
             </div>
