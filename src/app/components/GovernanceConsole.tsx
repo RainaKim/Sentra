@@ -927,7 +927,7 @@ export function GovernanceConsole() {
               <div className="p-6 space-y-6 overflow-y-auto flex-1">
             {/* Header */}
             <div className="flex items-center justify-between">
-              <h2 className="text-xs font-semibold text-gray-900">
+              <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
                 입력
               </h2>
               <span className="text-xs text-gray-400 font-mono">
@@ -1749,7 +1749,7 @@ export function GovernanceConsole() {
               <div className="p-6 space-y-6 overflow-y-auto flex-1">
             {/* Header */}
             <div className="flex items-center justify-between">
-              <h2 className="text-xs font-semibold text-gray-900">
+              <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
                 검증 결과
               </h2>
             </div>
