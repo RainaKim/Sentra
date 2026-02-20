@@ -673,8 +673,10 @@ export function Hero() {
                   {/* Textarea without integrated button */}
                   <textarea
                     ref={textareaRef}
-                    placeholder="예시: 다음 분기 제품 가격을 20% 인상하여 EU 시장에서 매출 성장을 가속화한다."
-                    className="w-full h-48 bg-gray-50 rounded-xl p-5 border border-gray-200 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-gray-400 resize-none"
+                    disabled
+                    placeholder="하단의 추천 의사결정에서 선택해 주세요."
+                    className="w-full h-48 rounded-xl p-5 border border-gray-200 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-gray-400 resize-none cursor-not-allowed"
+                    style={{ backgroundColor: '#F1F2F7' }}
                     value={decisionText}
                     onChange={(e) =>
                       setDecisionText(e.target.value)
