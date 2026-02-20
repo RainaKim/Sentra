@@ -224,7 +224,7 @@ export function DecisionPackReport({
             뒤로
           </button>
           <div className="flex items-start gap-3">
-            <button className="px-4 py-2 border border-gray-300 rounded text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2">
+            <button disabled className="px-4 py-2 border border-gray-200 rounded text-sm font-semibold text-gray-400 bg-gray-50 cursor-not-allowed flex items-center gap-2 opacity-60">
               <Download className="w-4 h-4" />
               PDF 내보내기
             </button>
