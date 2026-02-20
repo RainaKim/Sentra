@@ -14,8 +14,8 @@ export function Navigation() {
           </span>
         </div>
 
-        {/* Middle Navigation */}
-        <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-8">
+        
+        {/* <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-8">
           <a
             href="#value"
             className="text-[15px] font-medium text-gray-700 hover:text-gray-900 transition-colors"
@@ -28,13 +28,7 @@ export function Navigation() {
           >
             제품
           </a>
-          <a
-            href="#demo"
-            className="text-[15px] font-medium text-gray-700 hover:text-gray-900 transition-colors"
-          >
-            데모
-          </a>
-        </div>
+        </div> */}
 
         {/* Right Side - Empty for balance */}
         <div></div>
