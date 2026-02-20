@@ -228,7 +228,7 @@ export function DecisionPackReport({
               <Download className="w-4 h-4" />
               PDF 내보내기
             </button>
-            <div className="relative">
+            {/* <div className="relative">
               <button
                 onMouseEnter={() => setShowTooltip(true)}
                 onMouseLeave={() => setShowTooltip(false)}
@@ -242,7 +242,7 @@ export function DecisionPackReport({
                   기업 승인 워크플로우를 시작합니다
                 </div>
               )}
-            </div>
+            </div> */}
           </div>
         </div>
       </div>
