@@ -195,3 +195,18 @@ export async function getFixtures(companyId: string): Promise<DemoFixture[]> {
   }
   return data as DemoFixture[];
 }
+
+/** GET /v1/decisions/{id}/pdf — downloads the decision pack as PDF */
+export async function downloadDecisionPDF(decisionId: string): Promise<Blob> {
+  const url = `${API_BASE_URL}/v1/decisions/${decisionId}/pdf`;
+  const res = await fetch(url);
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `PDF download failed: ${res.status} ${res.statusText}${body ? `: ${body}` : ""}`,
+    );
+  }
+
+  return res.blob();
+}

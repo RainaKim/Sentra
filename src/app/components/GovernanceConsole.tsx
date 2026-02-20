@@ -1895,17 +1895,8 @@ export function GovernanceConsole() {
                 </div>
                 {(() => {
                   const riskScore = decisionResult?.governance?.risk_score ?? 0;
-                  const flags = decisionResult?.governance?.flags ?? [];
-                  // risk_score is the authoritative governance-engine output (0–10)
-                  // governance.flags severity is secondary; decision.risks[].severity is
-                  // a static risk definition field — not calculated per-decision, so excluded
-                  const hasHighRisk =
-                    flags.some(f => f.severity === 'high' || f.severity === 'critical') ||
-                    riskScore >= 7;
-                  const hasMediumRisk =
-                    flags.some(f => f.severity === 'medium') ||
-                    riskScore >= 4;
-                  const riskLevel = hasHighRisk ? 'HIGH-RISK' : hasMediumRisk ? 'MEDIUM' : 'LOW';
+                  // Use risk_score as the authoritative source for importance level
+                  const riskLevel = riskScore >= 7 ? 'HIGH-RISK' : riskScore >= 4 ? 'MEDIUM' : 'LOW';
                   const riskColor = riskLevel === 'HIGH-RISK' ? 'text-red-600' :
                     riskLevel === 'MEDIUM' ? 'text-amber-600' : 'text-green-600';
                   return (
