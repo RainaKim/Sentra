@@ -446,7 +446,7 @@ function buildGraphData(
   nodes.push({
     id: 'decision',
     type: 'decision',
-    label: 'DECISION ROOT',
+    label: 'DECISION',
     subLabel: decisionStatement,
     x: 530,
     y: 330,
@@ -551,7 +551,7 @@ function buildGraphData(
     nodes.push({
       id: 'risk',
       type: 'risk',
-      label: '위험 요소',
+      label: 'Risk',
       subLabel,
       x: 230,
       y: 560,
@@ -1372,6 +1372,17 @@ export function GovernanceConsole() {
                   {/* Dynamic Actor Node */}
                   {graphData.nodes.filter(n => n.type === 'actor').map((node) => (
                     <g key={node.id}>
+                      {/* Label outside and above the box */}
+                      <text
+                        x={node.x}
+                        y={node.y - 48}
+                        fill={node.color.label}
+                        fontSize="12"
+                        textAnchor="middle"
+                        fontWeight="600"
+                      >
+                        {node.label}
+                      </text>
                       <rect
                         x={node.x - 80}
                         y={node.y - 40}
@@ -1384,17 +1395,7 @@ export function GovernanceConsole() {
                       />
                       <text
                         x={node.x}
-                        y={node.y - 15}
-                        fill={node.color.label}
-                        fontSize="12"
-                        textAnchor="middle"
-                        fontWeight="600"
-                      >
-                        {node.label}
-                      </text>
-                      <text
-                        x={node.x}
-                        y={node.y + 10}
+                        y={node.y + 5}
                         fill={node.color.text}
                         fontSize="16"
                         textAnchor="middle"
@@ -1411,6 +1412,17 @@ export function GovernanceConsole() {
                     const nodeHeight = Math.max(80, 55 + textLines.length * 17);
                     return (
                       <g key={node.id}>
+                        {/* Label outside and above the box */}
+                        <text
+                          x={node.x}
+                          y={node.y - nodeHeight / 2 - 8}
+                          fill={node.color.label}
+                          fontSize="12"
+                          textAnchor="middle"
+                          fontWeight="600"
+                        >
+                          {node.label}
+                        </text>
                         <rect
                           x={node.x - 110}
                           y={node.y - nodeHeight / 2}
@@ -1421,21 +1433,11 @@ export function GovernanceConsole() {
                           strokeWidth="2"
                           rx="8"
                         />
-                        <text
-                          x={node.x}
-                          y={node.y - nodeHeight / 2 + 18}
-                          fill={node.color.label}
-                          fontSize="12"
-                          textAnchor="middle"
-                          fontWeight="600"
-                        >
-                          {node.label}
-                        </text>
                         {textLines.map((line, lineIdx) => (
                           <text
                             key={lineIdx}
                             x={node.x}
-                            y={node.y - nodeHeight / 2 + 36 + lineIdx * 16}
+                            y={node.y - nodeHeight / 2 + 24 + lineIdx * 16}
                             fill={node.color.text}
                             fontSize="14"
                             textAnchor="middle"
@@ -1454,6 +1456,17 @@ export function GovernanceConsole() {
                     const nodeHeight = Math.max(100, 50 + textLines.length * 18);
                     return (
                       <g key={node.id}>
+                        {/* Label outside and above the box */}
+                        <text
+                          x={node.x}
+                          y={node.y - nodeHeight / 2 - 8}
+                          fill={node.color.label}
+                          fontSize="13"
+                          textAnchor="middle"
+                          fontWeight="600"
+                        >
+                          {node.label}
+                        </text>
                         <rect
                           x={node.x - 170}
                           y={node.y - nodeHeight / 2}
@@ -1464,21 +1477,11 @@ export function GovernanceConsole() {
                           strokeWidth="3"
                           rx="8"
                         />
-                        <text
-                          x={node.x}
-                          y={node.y - nodeHeight / 2 + 22}
-                          fill={node.color.label}
-                          fontSize="13"
-                          textAnchor="middle"
-                          fontWeight="600"
-                        >
-                          {node.label}
-                        </text>
                         {textLines.map((line, lineIdx) => (
                           <text
                             key={lineIdx}
                             x={node.x}
-                            y={node.y - nodeHeight / 2 + 45 + lineIdx * 18}
+                            y={node.y - nodeHeight / 2 + 28 + lineIdx * 18}
                             fill={node.color.text}
                             fontSize="16"
                             textAnchor="middle"
@@ -1498,6 +1501,17 @@ export function GovernanceConsole() {
                     const nodeHeight = Math.max(80, 50 + textLines.length * 14 + (targetValue ? 20 : 0));
                     return (
                       <g key={node.id}>
+                        {/* Label outside and above the box */}
+                        <text
+                          x={node.x}
+                          y={node.y - nodeHeight / 2 - 8}
+                          fill={node.color.label}
+                          fontSize="12"
+                          textAnchor="middle"
+                          fontWeight="600"
+                        >
+                          {node.label}
+                        </text>
                         <rect
                           x={node.x - 80}
                           y={node.y - nodeHeight / 2}
@@ -1508,21 +1522,11 @@ export function GovernanceConsole() {
                           strokeWidth="2"
                           rx="8"
                         />
-                        <text
-                          x={node.x}
-                          y={node.y - nodeHeight / 2 + 18}
-                          fill={node.color.label}
-                          fontSize="12"
-                          textAnchor="middle"
-                          fontWeight="600"
-                        >
-                          {node.label}
-                        </text>
                         {textLines.map((line, lineIdx) => (
                           <text
                             key={lineIdx}
                             x={node.x}
-                            y={node.y - nodeHeight / 2 + 36 + lineIdx * 14}
+                            y={node.y - nodeHeight / 2 + 20 + lineIdx * 14}
                             fill={node.color.text}
                             fontSize="14"
                             textAnchor="middle"
@@ -1553,6 +1557,17 @@ export function GovernanceConsole() {
                     const nodeHeight = Math.max(80, 50 + textLines.length * 14);
                     return (
                       <g key={node.id}>
+                        {/* Label outside and above the box */}
+                        <text
+                          x={node.x}
+                          y={node.y - nodeHeight / 2 - 8}
+                          fill={node.color.label}
+                          fontSize="12"
+                          textAnchor="middle"
+                          fontWeight="600"
+                        >
+                          {node.label}
+                        </text>
                         <rect
                           x={node.x - 90}
                           y={node.y - nodeHeight / 2}
@@ -1575,21 +1590,11 @@ export function GovernanceConsole() {
                           rx="8"
                           className="animate-pulse"
                         />
-                        <text
-                          x={node.x}
-                          y={node.y - nodeHeight / 2 + 18}
-                          fill={node.color.label}
-                          fontSize="12"
-                          textAnchor="middle"
-                          fontWeight="600"
-                        >
-                          {node.label}
-                        </text>
                         {textLines.map((line, lineIdx) => (
                           <text
                             key={lineIdx}
                             x={node.x}
-                            y={node.y - nodeHeight / 2 + 36 + lineIdx * 14}
+                            y={node.y - nodeHeight / 2 + 20 + lineIdx * 14}
                             fill={node.color.text}
                             fontSize="14"
                             textAnchor="middle"
