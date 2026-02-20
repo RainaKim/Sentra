@@ -240,6 +240,29 @@ function extractRisks(result: DecisionResponse | null): DecisionRisk[] {
   return [];
 }
 
+// Strategic Goal type for new backend structure
+interface StrategicGoal {
+  goal_id: string;
+  name: string;
+  status: 'conflict' | 'aligned' | string;
+  reasoning?: string;
+  kpis?: unknown[];
+  priority?: string;
+  severity?: string;
+}
+
+function extractStrategicGoals(result: DecisionResponse | null): StrategicGoal[] {
+  if (!result) return [];
+
+  // Try goals_kpis.strategic_goals first (new backend structure)
+  const goalsKpis = (result as Record<string, unknown>).goals_kpis as Record<string, unknown> | undefined;
+  if (goalsKpis?.strategic_goals && Array.isArray(goalsKpis.strategic_goals)) {
+    return goalsKpis.strategic_goals as StrategicGoal[];
+  }
+
+  return [];
+}
+
 function extractCost(result: DecisionResponse | null): string {
   if (!result) return 'Unknown';
   
@@ -900,7 +923,7 @@ export function GovernanceConsole() {
 
             {/* Submitted Input (read-only) */}
             <div className="space-y-2.5">
-              <label className="text-xs text-gray-600 uppercase tracking-wide font-semibold">
+              <label className="text-xs font-semibold text-gray-900">
                 입력 수신됨
               </label>
               <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-xs text-gray-700 leading-relaxed">
@@ -913,7 +936,7 @@ export function GovernanceConsole() {
             {showExtractedData && (
               <div className="space-y-3.5 pt-2 animate-in fade-in duration-500">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  <h3 className="text-xs font-semibold text-gray-900">
                     추출된 엔티티
                   </h3>
                   <span className="text-xs text-green-600 font-semibold flex items-center gap-1">
@@ -1027,7 +1050,7 @@ export function GovernanceConsole() {
             {/* Ontology Triples */}
             {showExtractedData && (
               <div className="space-y-3 pt-2 animate-in fade-in duration-700">
-                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                <h3 className="text-xs font-semibold text-gray-900">
                   온톨로지 관계 구조
                 </h3>
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2 font-mono text-xs">
@@ -1324,14 +1347,14 @@ export function GovernanceConsole() {
 
                   {/* Dynamic Goal Nodes */}
                   {graphData.nodes.filter(n => n.type === 'goal').map((node) => {
-                    const textLines = wrapText(node.subLabel ?? '', 22);
-                    const nodeHeight = Math.max(70, 50 + textLines.length * 16);
+                    const textLines = wrapText(node.subLabel ?? '', 28);
+                    const nodeHeight = Math.max(80, 55 + textLines.length * 17);
                     return (
                       <g key={node.id}>
                         <rect
-                          x={node.x - 90}
+                          x={node.x - 110}
                           y={node.y - nodeHeight / 2}
-                          width="180"
+                          width="220"
                           height={nodeHeight}
                           fill="#FFFFFF"
                           stroke={node.color.border}
@@ -1666,7 +1689,7 @@ export function GovernanceConsole() {
           <div className="p-6 space-y-6">
             {/* Header */}
             <div className="flex items-center justify-between">
-              <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+              <h2 className="text-xs font-semibold text-gray-900">
                 의사결정 검증 결과
               </h2>
             </div>
@@ -1703,7 +1726,7 @@ export function GovernanceConsole() {
             {showRules && (
               <div className="space-y-3.5 animate-in fade-in duration-500">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  <h3 className="text-xs font-semibold text-gray-900">
                     Governance Rules
                   </h3>
                   <span className="text-xs text-gray-400 font-mono">
@@ -1853,7 +1876,7 @@ export function GovernanceConsole() {
             {showRules && (
               <div className="space-y-3.5">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  <h3 className="text-xs font-semibold text-gray-900">
                     승인 체계
                   </h3>
                   <span className="text-xs text-gray-400 font-mono">
@@ -1923,30 +1946,173 @@ export function GovernanceConsole() {
               </div>
             )}
 
-            {/* Live Trace Log */}
+            {/* Analysis Progress */}
             {showExtractedData && (
               <div className="space-y-3.5">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                    분석 현황
+                    AI 엔진 분석 현황
                   </h3>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
-                    <span className="text-xs text-green-600 font-semibold uppercase tracking-wide">
-                      LIVE
-                    </span>
-                  </div>
                 </div>
 
-                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2 font-mono text-xs max-h-48 overflow-y-auto">
-                  {traceLog.map((entry, idx) => (
-                    <div key={idx} className={`${entry.color} animate-in fade-in`}>
-                      {entry.text}
+                {/* Unified Analysis Status */}
+                <div className="bg-gray-900 rounded-lg p-4 space-y-4">
+                  {/* Progress Circle and Status */}
+                  <div className="flex items-center gap-4">
+                    {/* Circular Progress */}
+                    <div className="relative w-16 h-16 flex-shrink-0">
+                      <svg className="w-16 h-16 transform -rotate-90">
+                        {/* Background circle */}
+                        <circle
+                          cx="32"
+                          cy="32"
+                          r="28"
+                          stroke="#374151"
+                          strokeWidth="4"
+                          fill="none"
+                        />
+                        {/* Progress circle */}
+                        <circle
+                          cx="32"
+                          cy="32"
+                          r="28"
+                          stroke={analysisStep === 4 ? "#10B981" : "#8B5CF6"}
+                          strokeWidth="4"
+                          fill="none"
+                          strokeDasharray={`${(analysisStep / 4) * 175.93} 175.93`}
+                          strokeLinecap="round"
+                          className="transition-all duration-500"
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className={`text-sm font-bold ${analysisStep === 4 ? 'text-green-400' : 'text-purple-400'}`}>
+                          {Math.round((analysisStep / 4) * 100)}%
+                        </span>
+                      </div>
                     </div>
-                  ))}
-                  {traceLog.length === 0 && (
-                    <div className="text-gray-400 italic">로그 대기 중...</div>
-                  )}
+
+                    {/* Status Text */}
+                    <div className="flex-1">
+                      <div className="text-xs font-semibold text-white mb-1">
+                        {analysisStep === 4 ? '분석 완료' : 'AI 엔진 병렬 분석 중...'}
+                      </div>
+                      <div className="text-xs text-gray-300">
+                        {analysisStep === 0 && '분석 대기 중'}
+                        {analysisStep === 1 && '의사결정 정보 추출 중'}
+                        {analysisStep === 2 && '거버넌스 정책 검토 중'}
+                        {analysisStep === 3 && '전략 정합성 심층 분석 중'}
+                        {analysisStep === 4 && '의사결정 보고서(Decision Pack) 생성 완료'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Analysis Steps */}
+                  <div className="space-y-2.5 pt-2 border-t border-gray-700">
+                    {[
+                      { step: 1, title: '의사결정 정보 추출', desc: '비정형 텍스트 내 목표, 비용, KPI 등 엔터티 추출', hasWarning: false },
+                      {
+                        step: 2,
+                        title: '거버넌스 정책 검토',
+                        desc: (() => {
+                          const triggeredRules = (decisionResult?.governance?.all_rules ?? []).filter(r => {
+                            const s = r.status?.toUpperCase();
+                            return s === 'TRIGGERED' || s === 'VIOLATION';
+                          });
+                          if (triggeredRules.length > 0) {
+                            const rule = triggeredRules[0];
+                            return `${rule.rule_id ?? 'R2'} 감지: ${rule.description ?? rule.name ?? '준법 및 윤리 검토 필요'}`;
+                          }
+                          return 'R2 감지: 준법 및 윤리 검토 필요';
+                        })(),
+                        hasWarning: analysisStep >= 2
+                      },
+                      {
+                        step: 3,
+                        title: '전략 정합성 분석',
+                        desc: (() => {
+                          const strategicGoals = extractStrategicGoals(decisionResult);
+                          if (strategicGoals.length > 0) {
+                            const goal = strategicGoals[0];
+                            return `${goal.name}와의 논리적 일치 여부 확인`;
+                          }
+                          const kpis = extractKPIs(decisionResult);
+                          if (kpis.length > 0) {
+                            return `전사 KPI(${kpis[0].metric})와의 논리적 일치 여부 확인`;
+                          }
+                          return '전사 KPI(글로벌 확장)와의 논리적 일치 여부 확인';
+                        })(),
+                        hasWarning: false
+                      },
+                      {
+                        step: 4,
+                        title: '리스크 레벨 산정',
+                        desc: (() => {
+                          const riskScore = decisionResult?.governance?.risk_score ?? 0;
+                          const riskLevel = riskScore >= 7 ? 'High-Risk' : riskScore >= 4 ? 'Medium-Risk' : 'Low-Risk';
+                          return `종합 위험도(${riskLevel}) 및 영향 범위 분석`;
+                        })(),
+                        hasWarning: false
+                      },
+                      { step: 5, title: '보고서 패키징', desc: '승인 체계 및 판단 근거를 포함한 Decision Pack 생성', hasWarning: false },
+                    ].map((item) => {
+                      // Steps 1-3 map directly to analysisStep 1-3
+                      // Steps 4-5 both complete at analysisStep 4
+                      const isComplete = item.step <= 3 ? analysisStep >= item.step : analysisStep >= 4;
+                      const isInProgress = item.step <= 3
+                        ? analysisStep === item.step - 1
+                        : analysisStep === 3 && item.step === 4; // Step 4 shows in-progress at analysisStep 3
+                      const isPending = !isComplete && !isInProgress;
+
+                      return (
+                        <div key={item.step} className="flex items-start gap-3">
+                          {/* Status Icon */}
+                          {isComplete && !item.hasWarning && (
+                            <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                          )}
+                          {isComplete && item.hasWarning && (
+                            <div className="w-5 h-5 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                              </svg>
+                            </div>
+                          )}
+                          {isInProgress && (
+                            <div className="w-5 h-5 rounded-full border-2 border-purple-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></div>
+                            </div>
+                          )}
+                          {isPending && (
+                            <div className="w-5 h-5 rounded-full border-2 border-gray-600 flex-shrink-0 mt-0.5"></div>
+                          )}
+
+                          {/* Content */}
+                          <div className="flex-1 min-w-0">
+                            <div className={`text-xs font-semibold ${isComplete || isInProgress ? 'text-white' : 'text-gray-500'}`}>
+                              {item.title}
+                            </div>
+                            <div className={`text-xs mt-0.5 ${isComplete || isInProgress ? 'text-gray-300' : 'text-gray-600'}`}>
+                              {item.desc}
+                            </div>
+                          </div>
+
+                          {/* Status Label */}
+                          {isComplete && !item.hasWarning && (
+                            <span className="text-xs font-semibold text-green-400 flex-shrink-0">완료</span>
+                          )}
+                          {isComplete && item.hasWarning && (
+                            <span className="text-xs font-semibold text-amber-400 flex-shrink-0">주의</span>
+                          )}
+                          {isInProgress && (
+                            <span className="text-xs font-semibold text-purple-400 flex-shrink-0">병렬</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
@@ -1955,7 +2121,7 @@ export function GovernanceConsole() {
             {showReasoning && (
               <div className="space-y-3.5 animate-in fade-in duration-700">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  <h3 className="text-xs font-semibold text-gray-900">
                     임팩트 분석
                   </h3>
                   <span className="text-xs text-purple-600 font-semibold uppercase tracking-wide">
@@ -1965,9 +2131,62 @@ export function GovernanceConsole() {
 
                 {(() => {
                   const kpis = extractKPIs(decisionResult);
+                  const strategicGoals = extractStrategicGoals(decisionResult);
                   const riskScore = decisionResult?.governance?.risk_score ?? 0;
                   const flags = decisionResult?.governance?.flags ?? [];
                   const hasHighRisk = flags.some(f => f.severity === 'high' || f.severity === 'critical') || riskScore >= 7;
+
+                  // Show strategic goals if available (new backend structure)
+                  if (decisionResult && strategicGoals.length > 0) {
+                    return (
+                      <>
+                        <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 space-y-4">
+                          <div>
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-xs text-gray-600 uppercase tracking-wide font-semibold">전략적 목표 영향</span>
+                            </div>
+                            <div className="space-y-3">
+                              {strategicGoals.map((goal, idx) => {
+                                const isConflict = goal.status === 'conflict';
+                                const statusColor = isConflict ? 'text-red-600' : 'text-green-600';
+                                const statusBg = isConflict ? 'bg-red-50' : 'bg-green-50';
+                                const statusBorder = isConflict ? 'border-red-200' : 'border-green-200';
+                                const statusLabel = isConflict ? 'CONFLICT' : 'ALIGNED';
+
+                                return (
+                                  <div key={idx} className="space-y-1.5">
+                                    <div className="flex items-start gap-2">
+                                      <span className="text-gray-400 mt-0.5">•</span>
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className="text-sm font-semibold text-gray-900">
+                                            {goal.name}
+                                          </span>
+                                          <span className="text-xs text-gray-500">
+                                            ({goal.goal_id})
+                                          </span>
+                                          <span className={`px-2 py-0.5 rounded text-xs font-bold ${statusColor} ${statusBg} border ${statusBorder}`}>
+                                            {statusLabel}
+                                          </span>
+                                        </div>
+                                        {goal.reasoning && (
+                                          <div className="mt-1.5 flex items-start gap-2 text-xs text-gray-600 leading-relaxed">
+                                            <span className="text-gray-400">└─</span>
+                                            <span>{goal.reasoning}</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-500 italic">전략적 목표 기반 임팩트 분석</p>
+                      </>
+                    );
+                  }
 
                   // Real data with no KPIs — compliance/approval check; show governance impact instead
                   if (decisionResult && kpis.length === 0) {
