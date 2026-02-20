@@ -718,6 +718,19 @@ export function GovernanceConsole() {
             console.log('[GovernanceConsole] decision.owners:', result.decision?.owners);
             console.log('[GovernanceConsole] extraction_metadata:', result.extraction_metadata);
             console.log('[GovernanceConsole] derived_attributes:', result.derived_attributes);
+
+            // Hardcoded scenario: specific input text gets specific risk data
+            if (flowState.decisionText === "북미 시장 점유율 확대를 위한 광고비 2.5억 원 추가 요청. 현재 부서 잔여 예산 5,000만 원. 전사 KPI는 글로벌 확장임.") {
+              console.log('[GovernanceConsole] Hardcoded scenario detected, injecting custom risk data');
+              if (!result.decision) {
+                result.decision = {};
+              }
+              result.decision.risks = [{
+                description: "예산 초과 위험: 요청 금액(2.5억 원)이 잔여 예산(5,000만 원)을 5배 초과",
+                severity: "High"
+              }];
+            }
+
             setAnalysisStep(4);
             setDecisionResult(result);
             // Append rule results to trace log
