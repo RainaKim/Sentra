@@ -61,11 +61,22 @@ export async function getHealth(): Promise<Record<string, unknown>> {
 /** GET /v1/companies — returns list of demo companies (3 items) */
 export async function getCompanies(): Promise<Company[]> {
   const data = await apiFetch<unknown>("/v1/companies");
-  if (!Array.isArray(data)) {
-    console.warn("[API] /v1/companies did not return an array:", data);
-    return [];
+
+  // Handle new backend format: {companies: [...], total: N}
+  if (data && typeof data === 'object' && 'companies' in data) {
+    const companies = (data as { companies: unknown }).companies;
+    if (Array.isArray(companies)) {
+      return companies as Company[];
+    }
   }
-  return data as Company[];
+
+  // Fallback: handle old format (direct array)
+  if (Array.isArray(data)) {
+    return data as Company[];
+  }
+
+  console.warn("[API] /v1/companies unexpected format:", data);
+  return [];
 }
 
 /** GET /v1/companies/{company_id} */
