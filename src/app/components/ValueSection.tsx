@@ -9,39 +9,39 @@ export function ValueSection() {
   const phases = [
     {
       number: "01",
-      title: "Ontology-driven Decision Model",
+      title: "아이디어를 '비즈니스 지도'로 변환",
       icon: Database,
       valueStatement:
-        "전략 텍스트를 조직의 Decision Graph로 변환합니다. 주체, 목표, 리스크, 자원을 구조화하여 AI가 이해할 수 있는 관계 모델을 생성합니다.",
+        "사용자가 자유롭게 쓴 전략 텍스트를 AI가 읽고, 우리 회사가 이해할 수 있는 디지털 지도로 만듭니다. 단순히 글자를 읽는 게 아니라 누가, 무엇을 위해, 어떤 자원을 써서 리스크를 감수하려 하는지 그 구조를 파악합니다.",
       points: [
-        "Entity & Relationship 자동 추출",
-        "Decision Graph 생성",
-        "Governance-ready 데이터 구조화",
+        "정보 자동 추출: 기획안에서 핵심 인물과 목표를 자동으로 뽑아냅니다.",
+        "의사결정 지도(Graph) 생성: 각 요소가 서로 어떻게 연결되는지 관계를 그립니다.",
+        "검토 준비 완료: 회사의 규칙과 비교할 수 있도록 데이터를 정돈합니다.",
       ],
     },
     {
       number: "02",
-      title: "Deterministic Governance + AI Reasoning",
+      title: "회사의 '철칙'으로 깐깐하게 검증",
       icon: Shield,
       valueStatement:
-        "조직 규칙과 AI 추론을 결합하여 모든 의사결정을 실행 전에 검증합니다.",
+        "작성된 지도를 회사의 업무 규정 및 예산 정책과 대조하여 위험 요소를 찾아냅니다. AI의 똑똑한 추론 능력과 회사의 변하지 않는 규칙(Guardrail)을 결합해 실행 가능 여부를 판단합니다.",
       points: [
-        "Policy 기반 Guardrail 실행",
-        "Multi-hop Reasoning으로 영향 분석",
-        "Goal 간 충돌 자동 탐지",
+        "사고 방지 가드레일: 회사의 정책을 벗어나는 행동을 즉시 찾아내 차단합니다.",
+        "꼬리에 꼬리를 무는 분석: 이 결정이 가져올 연쇄적인 파급 효과까지 꼼꼼히 따져봅니다.",
+        "목표 충돌 발견: '비용 절감'과 '공격적 채용'처럼 서로 부딪히는 목표가 있는지 자동으로 잡아냅니다.",
       ],
       emphasized: true,
     },
     {
       number: "03",
-      title: "Audit-ready Decision Pack",
+      title: "'즉시 승인 가능한 보고서' 발행",
       icon: FileText,
       valueStatement:
-        "승인을 위한 Audit-ready Decision Pack을 제공합니다.",
+        "검토가 끝나면 경영진이 3초 만에 보고 판단할 수 있는 최종 결과물을 만듭니다. 법적 책임과 감사까지 고려한 투명한 보고서(Decision Pack)를 제공합니다.",
       points: [
-        "Approval Chain 자동 구성",
-        "Reasoning Trace 포함",
-        "감사 대응 가능한 Audit Log 생성",
+        "결재 라인 자동 구성: 누구에게 승인을 받아야 하는지 결재 순서를 자동으로 짜줍니다.",
+        "판단 근거 공개: AI가 왜 이런 결론을 내렸는지 그 이유(추론 경로)를 투명하게 보여줍니다.",
+        "증거 기록(Audit Log): 나중에 문제가 생겨도 책임 소재를 확인할 수 있도록 모든 검토 기록을 남깁니다.",
       ],
     },
   ];
@@ -54,11 +54,10 @@ export function ValueSection() {
           작동 원리
         </div>
         <h2 className="text-5xl font-bold text-gray-900 tracking-tight">
-          Bring Control to AI Decision-Making
+          AI 의사결정, 이렇게 통제합니다
         </h2>
         <p className="text-xl text-gray-600">
-          초기 Strategy부터 Governed Execution까지 — 몇 초면
-          충분합니다
+          초기 전략 수립부터 안전한 실행까지 — 단 몇 초면 충분합니다
         </p>
       </div>
 

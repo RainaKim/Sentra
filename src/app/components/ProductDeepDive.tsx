@@ -18,7 +18,7 @@ export function ProductDeepDive() {
         <div className="relative">
           <div className="absolute inset-0 bg-gradient-to-br from-gray-400/10 to-gray-500/10 blur-3xl -z-10"></div>
 
-          <div className="bg-white rounded-lg p-8 shadow-xl border border-gray-200">
+          <div className="rounded-lg p-8 shadow-xl border border-gray-200" style={{ backgroundColor: '#F1F2F7' }}>
             <div className="space-y-6 font-mono">
               {/* Header */}
               <div className="flex items-center justify-between pb-4 border-b border-gray-200">
@@ -212,28 +212,24 @@ export function ProductDeepDive() {
         </div>
 
         {/* Right - Features */}
-        <div className="space-y-8">
+        <div className="space-y-8 flex flex-col items-center justify-center h-full text-center">
           <div className="space-y-4">
             <div className="inline-block px-4 py-2 bg-gray-100 text-gray-700 rounded-full text-sm font-semibold">
               Enterprise-Grade Governance
             </div>
             <h2 className="text-5xl font-bold text-gray-900 tracking-tight leading-tight">
-              AI 결정에 조직의
-              <br />
-              통제권을 부여합니다.
+              AI 결정에 조직의<br />통제권을 부여합니다.
             </h2>
             <p className="text-xl text-gray-600 leading-relaxed">
-              자동화된 검증 레이어로 AI의 속도와
-              <br />
-              조직의 거버넌스를 동시에 확보하세요.
+              자동화된 검증 레이어로 AI의 속도와<br />조직의 거버넌스를 동시에 확보하세요.
             </p>
           </div>
 
-          <div className="space-y-4 pt-4">
+          <div className="space-y-4 pt-4 w-full max-w-md mx-auto">
             {features.map((feature, idx) => (
               <div
                 key={idx}
-                className="flex items-start gap-4 group"
+                className="flex items-center gap-4 group justify-center"
               >
                 <div className="w-6 h-6 rounded-full bg-gray-900 flex items-center justify-center flex-shrink-0 mt-0.5 group-hover:scale-110 transition-transform">
                   <CheckCircle2 className="w-4 h-4 text-white" />
