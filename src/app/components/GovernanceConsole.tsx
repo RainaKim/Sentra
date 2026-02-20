@@ -973,13 +973,13 @@ export function GovernanceConsole() {
                 <div className="space-y-2.5">
                   {/* Owners/Actors - only show if we have data */}
                   {extractOwners(decisionResult).filter(o => o.name || o.role).map((owner, idx) => (
-                    <div key={`owner-${idx}`} className="flex items-center gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-3.5 py-2.5">
-                      <Users className="w-3.5 h-3.5 text-blue-600" />
-                      <div className="flex-1">
+                    <div key={`owner-${idx}`} className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-3.5 py-2.5">
+                      <Users className="w-3.5 h-3.5 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
                         <div className="text-xs text-blue-700 font-semibold">
                           Actor
                         </div>
-                        <div className="text-xs text-gray-600">
+                        <div className="text-xs text-gray-600 break-words">
                           {owner.role ? `${owner.role}: ` : ''}{owner.name}
                         </div>
                       </div>
@@ -1019,13 +1019,13 @@ export function GovernanceConsole() {
                     }
                     // Fallback to old goals if no strategic goals
                     return extractGoals(decisionResult).filter(g => g.statement).map((goal, idx) => (
-                      <div key={`goal-${idx}`} className="flex items-center gap-2.5 bg-cyan-50 border border-cyan-200 rounded-xl px-3.5 py-2.5">
-                        <Target className="w-3.5 h-3.5 text-cyan-600" />
-                        <div className="flex-1">
+                      <div key={`goal-${idx}`} className="flex items-start gap-2.5 bg-cyan-50 border border-cyan-200 rounded-xl px-3.5 py-2.5">
+                        <Target className="w-3.5 h-3.5 text-cyan-600 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
                           <div className="text-xs text-cyan-700 font-semibold">
                             Goal
                           </div>
-                          <div className="text-xs text-gray-600">
+                          <div className="text-xs text-gray-600 break-words">
                             {goal.statement}
                           </div>
                         </div>
@@ -1035,13 +1035,13 @@ export function GovernanceConsole() {
 
                   {/* Cost - only show if not Unknown */}
                   {extractCost(decisionResult) !== 'Unknown' && (
-                    <div className="flex items-center gap-2.5 bg-green-50 border border-green-200 rounded-xl px-3.5 py-2.5">
-                      <DollarSign className="w-3.5 h-3.5 text-green-600" />
-                      <div className="flex-1">
+                    <div className="flex items-start gap-2.5 bg-green-50 border border-green-200 rounded-xl px-3.5 py-2.5">
+                      <DollarSign className="w-3.5 h-3.5 text-green-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
                         <div className="text-xs text-green-700 font-semibold">
                           Cost
                         </div>
-                        <div className="text-xs text-gray-600">
+                        <div className="text-xs text-gray-600 break-words">
                           {extractCost(decisionResult)}
                         </div>
                       </div>
@@ -1050,13 +1050,13 @@ export function GovernanceConsole() {
 
                   {/* Data - only show if not Unknown */}
                   {extractDataType(decisionResult) !== 'Unknown' && (
-                    <div className="flex items-center gap-2.5 bg-purple-50 border border-purple-200 rounded-xl px-3.5 py-2.5">
-                      <Database className="w-3.5 h-3.5 text-purple-600" />
-                      <div className="flex-1">
+                    <div className="flex items-start gap-2.5 bg-purple-50 border border-purple-200 rounded-xl px-3.5 py-2.5">
+                      <Database className="w-3.5 h-3.5 text-purple-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
                         <div className="text-xs text-purple-700 font-semibold">
                           Data
                         </div>
-                        <div className="text-xs text-gray-600">
+                        <div className="text-xs text-gray-600 break-words">
                           {extractDataType(decisionResult)}
                         </div>
                       </div>
@@ -1065,13 +1065,13 @@ export function GovernanceConsole() {
 
                   {/* KPIs - only show if metric exists */}
                   {extractKPIs(decisionResult).filter(k => k.metric).map((kpi, idx) => (
-                    <div key={`kpi-${idx}`} className="flex items-center gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5">
-                      <TrendingUp className="w-3.5 h-3.5 text-amber-600" />
-                      <div className="flex-1">
+                    <div key={`kpi-${idx}`} className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5">
+                      <TrendingUp className="w-3.5 h-3.5 text-amber-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
                         <div className="text-xs text-amber-700 font-semibold">
                           KPI
                         </div>
-                        <div className="text-xs text-gray-600">
+                        <div className="text-xs text-gray-600 break-words">
                           {kpi.metric}{kpi.target ? ` ${kpi.target}` : ''}
                         </div>
                       </div>
@@ -1837,15 +1837,15 @@ export function GovernanceConsole() {
                             <div key={rule.rule_id ?? idx}>
                               {idx > 0 && <div className="h-px bg-gray-200"></div>}
                               <div className={`px-4 py-3.5 hover:bg-white transition-colors border-l-3 ${borderColor} ${bgColor}`}>
-                                <div className="flex items-center justify-between mb-1.5">
-                                  <span className="text-xs font-bold text-gray-900">
+                                <div className="flex items-start justify-between mb-1.5 gap-2">
+                                  <span className="text-xs font-bold text-gray-900 break-words flex-1">
                                     {rule.rule_id} {rule.name}
                                   </span>
-                                  <span className={`text-xs font-bold uppercase tracking-wide ${statusColor}`}>
+                                  <span className={`text-xs font-bold uppercase tracking-wide ${statusColor} flex-shrink-0`}>
                                     {displayStatus}
                                   </span>
                                 </div>
-                                <p className={`text-xs ${descColor}`}>
+                                <p className={`text-xs ${descColor} break-words`}>
                                   {rule.description ?? rule.why ?? '설명 없음'}
                                 </p>
                               </div>
@@ -1980,14 +1980,14 @@ export function GovernanceConsole() {
                               className={`px-4 py-3.5 border-l-3 ${borderColor} ${idx < chain.length - 1 ? 'border-b border-gray-200' : ''} hover:bg-white transition-colors`}
                             >
                               <div className="grid grid-cols-3 gap-4">
-                                <div className="text-xs text-gray-900 font-bold">{personName}</div>
-                                <div className="text-xs text-gray-600">{jobTitle}</div>
-                                <div className={`text-xs font-bold text-right uppercase tracking-wide ${statusColor}`}>
+                                <div className="text-xs text-gray-900 font-bold break-words">{personName}</div>
+                                <div className="text-xs text-gray-600 break-words">{jobTitle}</div>
+                                <div className={`text-xs font-bold text-right uppercase tracking-wide ${statusColor} break-words`}>
                                   {statusLabel}
                                 </div>
                               </div>
                               {reason && (
-                                <div className="text-xs text-gray-500 mt-1.5">
+                                <div className="text-xs text-gray-500 mt-1.5 break-words">
                                   {sourceRule ? `${sourceRule}: ` : ''}{reason}
                                 </div>
                               )}
@@ -2065,8 +2065,9 @@ export function GovernanceConsole() {
                   <div className="space-y-2.5 pt-2 border-t border-gray-700">
                     {[
                       { step: 1, title: '의사결정 정보 추출', desc: '비정형 텍스트 내 목표, 비용, KPI 등 엔터티 추출', hasWarning: false },
+                      { step: 2, title: '온톨로지 관계 구조화', desc: '추출된 엔터티 간 의미적 관계를 온톨로지 기반으로 구조화', hasWarning: false },
                       {
-                        step: 2,
+                        step: 3,
                         title: '거버넌스 정책 검토',
                         desc: (() => {
                           const triggeredRules = (decisionResult?.governance?.all_rules ?? []).filter(r => {
@@ -2088,7 +2089,7 @@ export function GovernanceConsole() {
                         })()
                       },
                       {
-                        step: 3,
+                        step: 4,
                         title: '전략 정합성 분석',
                         desc: (() => {
                           const strategicGoals = extractStrategicGoals(decisionResult);
@@ -2105,7 +2106,7 @@ export function GovernanceConsole() {
                         hasWarning: false
                       },
                       {
-                        step: 4,
+                        step: 5,
                         title: '리스크 레벨 산정',
                         desc: (() => {
                           const riskScore = decisionResult?.governance?.risk_score ?? 0;
@@ -2114,14 +2115,14 @@ export function GovernanceConsole() {
                         })(),
                         hasWarning: false
                       },
-                      { step: 5, title: '보고서 패키징', desc: '승인 체계 및 판단 근거를 포함한 Decision Pack 생성', hasWarning: false },
+                      { step: 6, title: '보고서 패키징', desc: '승인 체계 및 판단 근거를 포함한 Decision Pack 생성', hasWarning: false },
                     ].map((item) => {
                       // Steps 1-3 map directly to analysisStep 1-3
-                      // Steps 4-5 both complete at analysisStep 4
+                      // Steps 4-6 complete at analysisStep 4
                       const isComplete = item.step <= 3 ? analysisStep >= item.step : analysisStep >= 4;
                       const isInProgress = item.step <= 3
                         ? analysisStep === item.step - 1
-                        : analysisStep === 3 && item.step === 4; // Step 4 shows in-progress at analysisStep 3
+                        : analysisStep === 3 && item.step === 4; // Step 4+ shows in-progress at analysisStep 3
                       const isPending = !isComplete && !isInProgress;
 
                       return (
@@ -2232,8 +2233,8 @@ export function GovernanceConsole() {
                                         </div>
                                         {goal.reasoning && (
                                           <div className="mt-1.5 flex items-start gap-2 text-xs text-gray-600 leading-relaxed">
-                                            <span className="text-gray-400">└─</span>
-                                            <span>{goal.reasoning}</span>
+                                            <span className="text-gray-400 flex-shrink-0">└─</span>
+                                            <span className="break-words">{goal.reasoning}</span>
                                           </div>
                                         )}
                                       </div>
@@ -2268,7 +2269,7 @@ export function GovernanceConsole() {
                                   {hasHighRisk ? '높음' : '중간'}
                                 </span>
                               </div>
-                              <p className="text-xs text-gray-700 leading-relaxed">
+                              <p className="text-xs text-gray-700 leading-relaxed break-words">
                                 {risks[0].description ?? '위험 요소 감지됨'}
                               </p>
                             </div>
@@ -2280,7 +2281,7 @@ export function GovernanceConsole() {
                                 <span className="text-xs text-gray-600 uppercase tracking-wide">정책 위반</span>
                                 <span className="text-sm font-bold text-red-600">{triggeredRules.length}건 감지</span>
                               </div>
-                              <p className="text-xs text-gray-700 leading-relaxed">
+                              <p className="text-xs text-gray-700 leading-relaxed break-words">
                                 {triggeredRules[0].description ?? triggeredRules[0].name ?? triggeredRules[0].rule_id ?? '규칙 위반 감지됨'}
                               </p>
                             </div>
