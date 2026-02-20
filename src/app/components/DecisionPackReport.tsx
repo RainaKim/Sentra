@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   Download,
+  Mail,
   Check,
   Clock,
   AlertCircle,
@@ -9,6 +10,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import type { DecisionResponse, GovernanceRule } from "../../api/types";
+import { downloadDecisionPDF } from "../../api/client";
 
 interface DecisionPackReportProps {
   onBack: () => void;
@@ -134,6 +136,35 @@ export function DecisionPackReport({
   decisionData: dp,
 }: DecisionPackReportProps) {
   const [showTooltip, setShowTooltip] = useState(false);
+  const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
+
+  // PDF download handler
+  const handleDownloadPDF = async () => {
+    if (!dp?.decision_id) {
+      console.error("No decision ID available for PDF download");
+      return;
+    }
+
+    try {
+      setIsDownloadingPDF(true);
+      const blob = await downloadDecisionPDF(dp.decision_id);
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `decision-pack-${dp.decision_id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error("Failed to download PDF:", error);
+      alert("PDF 다운로드에 실패했습니다.");
+    } finally {
+      setIsDownloadingPDF(false);
+    }
+  };
 
   // ── Derived values ──────────────────────────────────────────────────────
   const score = dp?.governance?.risk_score ?? 0;
@@ -224,9 +255,12 @@ export function DecisionPackReport({
             뒤로
           </button>
           <div className="flex items-start gap-3">
-            <button disabled className="px-4 py-2 border border-gray-200 rounded text-sm font-semibold text-gray-400 bg-gray-50 cursor-not-allowed flex items-center gap-2 opacity-60">
-              <Download className="w-4 h-4" />
-              PDF 내보내기
+            <button
+              onClick={() => {}}
+              className="px-5 py-2.5 text-sm font-semibold rounded-xl transition-all flex items-center gap-2 bg-gray-900 text-white hover:bg-gray-800 shadow-md hover:shadow-lg"
+            >
+              <Mail className="w-4 h-4" />
+              이메일 전송
             </button>
             {/* <div className="relative">
               <button

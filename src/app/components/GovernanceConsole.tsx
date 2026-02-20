@@ -927,7 +927,7 @@ export function GovernanceConsole() {
               <div className="p-6 space-y-6 overflow-y-auto flex-1">
             {/* Header */}
             <div className="flex items-center justify-between">
-              <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+              <h2 className="text-xl font-bold text-gray-500 uppercase tracking-wider">
                 입력
               </h2>
               <span className="text-xs text-gray-400 font-mono">
@@ -946,8 +946,8 @@ export function GovernanceConsole() {
             </div>
 
             {/* Submitted Input (read-only) */}
-            <div className="space-y-2.5">
-              <label className="text-xs font-semibold text-gray-900">
+            <div>
+              <label className="text-sm font-semibold text-gray-900 block mb-4">
                 입력 수신됨
               </label>
               <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-xs text-gray-700 leading-relaxed">
@@ -960,7 +960,7 @@ export function GovernanceConsole() {
             {showExtractedData && (
               <div className="space-y-3.5 pt-2 animate-in fade-in duration-500">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-semibold text-gray-900">
+                  <h3 className="text-sm font-semibold text-gray-900">
                     추출된 엔티티
                   </h3>
                   <span className="text-xs text-green-600 font-semibold flex items-center gap-1">
@@ -1080,13 +1080,13 @@ export function GovernanceConsole() {
 
                   {/* Risks - only show if description exists */}
                   {extractRisks(decisionResult).filter(r => r.description).map((risk, idx) => (
-                    <div key={`risk-${idx}`} className="flex items-center gap-2.5 bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5">
-                      <FileText className="w-3.5 h-3.5 text-red-600" />
-                      <div className="flex-1">
+                    <div key={`risk-${idx}`} className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5">
+                      <FileText className="w-3.5 h-3.5 text-red-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
                         <div className="text-xs text-red-700 font-semibold">
-                          Risk
+                          위험 요소
                         </div>
-                        <div className="text-xs text-gray-600">
+                        <div className="text-xs text-gray-600 break-words">
                           {risk.description}
                         </div>
                       </div>
@@ -1106,7 +1106,7 @@ export function GovernanceConsole() {
             {/* Ontology Triples */}
             {showExtractedData && (
               <div className="space-y-3 pt-2 animate-in fade-in duration-700">
-                <h3 className="text-xs font-semibold text-gray-900">
+                <h3 className="text-sm font-semibold text-gray-900">
                   온톨로지 관계 구조
                 </h3>
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2 font-mono text-xs">
@@ -1217,7 +1217,8 @@ export function GovernanceConsole() {
 
         {/* CENTER PANEL - Governance Mind Map */}
         <div className="flex-1 overflow-hidden relative" style={{ backgroundColor: '#F1F2F7' }}>
-          <div className="p-6 h-full flex flex-col">
+          <div className="p-4 h-full flex flex-col">
+            <div className="p-6 h-full flex flex-col">
             {/* Header with Stepper during analysis */}
             <div className="mb-4">
               {isAnalyzing && (
@@ -1266,7 +1267,7 @@ export function GovernanceConsole() {
               )}
 
               <div className="flex items-center justify-between">
-                <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                <h2 className="text-xl font-bold text-gray-500 uppercase tracking-wider">
                   의사결정 지식 그래프
                 </h2>
 
@@ -1739,6 +1740,7 @@ export function GovernanceConsole() {
                 </div>
               </div>
             )}
+            </div>
           </div>
         </div>
 
@@ -1749,7 +1751,7 @@ export function GovernanceConsole() {
               <div className="p-6 space-y-6 overflow-y-auto flex-1">
             {/* Header */}
             <div className="flex items-center justify-between">
-              <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+              <h2 className="text-xl font-bold text-gray-500 uppercase tracking-wider">
                 검증 결과
               </h2>
             </div>
@@ -1786,7 +1788,7 @@ export function GovernanceConsole() {
             {showRules && (
               <div className="space-y-3.5 animate-in fade-in duration-500">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-semibold text-gray-900">
+                  <h3 className="text-sm font-semibold text-gray-900">
                     Governance Rules
                   </h3>
                   <span className="text-xs text-gray-400 font-mono">
@@ -1895,17 +1897,8 @@ export function GovernanceConsole() {
                 </div>
                 {(() => {
                   const riskScore = decisionResult?.governance?.risk_score ?? 0;
-                  const flags = decisionResult?.governance?.flags ?? [];
-                  // risk_score is the authoritative governance-engine output (0–10)
-                  // governance.flags severity is secondary; decision.risks[].severity is
-                  // a static risk definition field — not calculated per-decision, so excluded
-                  const hasHighRisk =
-                    flags.some(f => f.severity === 'high' || f.severity === 'critical') ||
-                    riskScore >= 7;
-                  const hasMediumRisk =
-                    flags.some(f => f.severity === 'medium') ||
-                    riskScore >= 4;
-                  const riskLevel = hasHighRisk ? 'HIGH-RISK' : hasMediumRisk ? 'MEDIUM' : 'LOW';
+                  // Use risk_score as the authoritative source for importance level
+                  const riskLevel = riskScore >= 7 ? 'HIGH-RISK' : riskScore >= 4 ? 'MEDIUM' : 'LOW';
                   const riskColor = riskLevel === 'HIGH-RISK' ? 'text-red-600' :
                     riskLevel === 'MEDIUM' ? 'text-amber-600' : 'text-green-600';
                   return (
@@ -1936,7 +1929,7 @@ export function GovernanceConsole() {
             {showRules && (
               <div className="space-y-3.5">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-semibold text-gray-900">
+                  <h3 className="text-sm font-semibold text-gray-900">
                     승인 체계
                   </h3>
                   <span className="text-xs text-gray-400 font-mono">
@@ -2187,7 +2180,7 @@ export function GovernanceConsole() {
             {showReasoning && (
               <div className="space-y-3.5 animate-in fade-in duration-700">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-semibold text-gray-900">
+                  <h3 className="text-sm font-semibold text-gray-900">
                     임팩트 분석
                   </h3>
                   <span className="text-xs text-purple-600 font-semibold uppercase tracking-wide">
