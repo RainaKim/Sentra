@@ -14,7 +14,7 @@ export function Navigation() {
             <div className="w-2 h-8 bg-gradient-to-b from-gray-600 to-gray-500 rounded-sm"></div>
           </div>
           <span className="text-2xl font-bold tracking-tight text-gray-900">
-            SENTRA
+            DecisionGovernance AI
           </span>
         </div>
 

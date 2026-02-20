@@ -16,7 +16,7 @@ export function CTABanner() {
             </h2>
             <p className="text-xl text-gray-300 max-w-3xl mx-auto leading-relaxed">
               빠른 AI 의사결정과 조직의 통제를 동시에 확보하세요.<br />
-              SENTRA로 안전하고 검증된 AI 경영을 시작합니다.
+              DecisionGovernance AI로 안전하고 검증된 AI 경영을 시작합니다.
             </p>
           </div>
 

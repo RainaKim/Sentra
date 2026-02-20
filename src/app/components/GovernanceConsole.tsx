@@ -810,7 +810,7 @@ export function GovernanceConsole() {
               href="/"
               className="font-bold text-sm tracking-wider text-gray-900"
             >
-              SENTRA
+              DecisionGovernance AI
             </a>
           </div>
 
