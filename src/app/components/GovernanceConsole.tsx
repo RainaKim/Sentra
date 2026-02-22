@@ -12,8 +12,10 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLocation } from "react-router";
+import { ReactFlowProvider } from "reactflow";
 import { DecisionPackReport } from "./DecisionPackReport";
 import { runDecisionFlow } from "../../api/decisionRunner";
+import { OntologyGraph } from "./ontology/OntologyGraph";
 import type { DecisionResponse, DecisionGoal, DecisionKPI, DecisionOwner, DecisionRisk, GraphPayloadNode } from "../../api/types";
 
 // Demo fallback text shown when navigating directly to /console
@@ -30,8 +32,8 @@ function getGraphNodes(result: DecisionResponse | null, nodeType: string): Graph
   if (!result?.graph_payload?.nodes) return [];
   const nodes = result.graph_payload.nodes;
   if (!Array.isArray(nodes)) return [];
-  return nodes.filter((n): n is GraphPayloadNode => 
-    typeof n === 'object' && n !== null && n.type === nodeType
+  return nodes.filter((n): n is GraphPayloadNode =>
+    typeof n === 'object' && n !== null && n.type?.toUpperCase() === nodeType.toUpperCase()
   );
 }
 
@@ -969,12 +971,12 @@ export function GovernanceConsole() {
             </div>
 
 
-            {/* Extracted Entities - Step 1 Output */}
+            {/* Decision Impact Summary */}
             {showExtractedData && (
               <div className="space-y-3.5 pt-2 animate-in fade-in duration-500">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-900">
-                    추출된 엔티티
+                    의사결정 영향 요약
                   </h3>
                   <span className="text-xs text-green-600 font-semibold flex items-center gap-1">
                     <div className="w-1 h-1 rounded-full bg-green-600"></div>
@@ -982,243 +984,250 @@ export function GovernanceConsole() {
                   </span>
                 </div>
 
-                {/* Entity Chips - Only show entities with actual data */}
                 <div className="space-y-2.5">
-                  {/* Owners/Actors - only show if we have data */}
-                  {extractOwners(decisionResult).filter(o => o.name || o.role).map((owner, idx) => (
-                    <div key={`owner-${idx}`} className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-3.5 py-2.5">
-                      <Users className="w-3.5 h-3.5 text-blue-600 mt-0.5 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
+                  {/* 분석된 핵심 요소 */}
+                  {(extractCost(decisionResult) !== 'Unknown' || extractRegion(decisionResult) !== 'Unknown' || extractKPIs(decisionResult).length > 0) && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl px-3.5 py-2.5">
+                      <div className="flex items-start gap-2.5 mb-3">
+                        <Database className="w-3.5 h-3.5 text-blue-600 mt-0.5 flex-shrink-0" />
                         <div className="text-xs text-blue-700 font-semibold">
-                          Actor
-                        </div>
-                        <div className="text-xs text-gray-600 break-words">
-                          {owner.role ? `${owner.role}: ` : ''}{owner.name}
+                          분석된 핵심 요소
                         </div>
                       </div>
+                      <div className="space-y-1.5 text-xs ml-6">
+                        {extractCost(decisionResult) !== 'Unknown' && (
+                          <div className="text-gray-900">
+                            <span className="font-semibold">비용:</span> {extractCost(decisionResult)}
+                          </div>
+                        )}
+                        {extractRegion(decisionResult) !== 'Unknown' && (
+                          <div className="text-gray-900">
+                            <span className="font-semibold">영향 지역:</span> {extractRegion(decisionResult)}
+                          </div>
+                        )}
+                        {extractKPIs(decisionResult).filter(k => k.metric).map((kpi, idx) => (
+                          <div key={idx} className="text-gray-900">
+                            <span className="font-semibold">KPI:</span> {kpi.metric}{kpi.target ? ` ${kpi.target}` : ''}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  ))}
+                  )}
 
-                  {/* Strategic Goals - show with alignment status */}
+                  {/* 전략 영향 */}
                   {(() => {
                     const strategicGoals = extractStrategicGoals(decisionResult);
-                    if (strategicGoals.length > 0) {
-                      return strategicGoals.map((goal, idx) => {
-                        const isConflict = goal.status === 'conflict';
-                        const bgColor = isConflict ? 'bg-red-50' : 'bg-green-50';
-                        const borderColor = isConflict ? 'border-red-200' : 'border-green-200';
-                        const iconColor = isConflict ? 'text-red-600' : 'text-green-600';
-                        const textColor = isConflict ? 'text-red-700' : 'text-green-700';
-                        return (
-                          <div key={`goal-${idx}`} className={`flex items-start gap-2.5 ${bgColor} border ${borderColor} rounded-xl px-3.5 py-2.5`}>
-                            <Target className={`w-3.5 h-3.5 ${iconColor} mt-0.5 flex-shrink-0`} />
-                            <div className="flex-1 min-w-0">
-                              <div className={`text-xs ${textColor} font-semibold flex items-center gap-2 flex-wrap`}>
-                                <span>{goal.name}</span>
-                                <span className="text-xs text-gray-500">({goal.goal_id})</span>
-                                <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${isConflict ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                                  {isConflict ? 'CONFLICT' : 'ALIGNED'}
-                                </span>
-                              </div>
-                              {goal.reasoning && (
-                                <div className="text-xs text-gray-600 mt-1">
-                                  {goal.reasoning}
-                                </div>
-                              )}
+                    const graphNodes = decisionResult?.graph_payload?.nodes || [];
+                    const graphEdges = decisionResult?.graph_payload?.edges || [];
+                    const supportsEdges = graphEdges.filter((e: any) => e.relation === 'SUPPORTS' || e.predicate === 'SUPPORTS');
+                    const conflictsEdges = graphEdges.filter((e: any) => e.relation === 'CONFLICTS_WITH' || e.predicate === 'CONFLICTS_WITH');
+
+                    if (strategicGoals.length > 0 || supportsEdges.length > 0 || conflictsEdges.length > 0) {
+                      return (
+                        <div className="bg-cyan-50 border border-cyan-200 rounded-xl px-3.5 py-2.5">
+                          <div className="flex items-start gap-2.5 mb-3">
+                            <Target className="w-3.5 h-3.5 text-cyan-600 mt-0.5 flex-shrink-0" />
+                            <div className="text-xs text-cyan-700 font-semibold">
+                              전략 영향
                             </div>
                           </div>
-                        );
-                      });
-                    }
-                    // Fallback to old goals if no strategic goals
-                    return extractGoals(decisionResult).filter(g => g.statement).map((goal, idx) => (
-                      <div key={`goal-${idx}`} className="flex items-start gap-2.5 bg-cyan-50 border border-cyan-200 rounded-xl px-3.5 py-2.5">
-                        <Target className="w-3.5 h-3.5 text-cyan-600 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs text-cyan-700 font-semibold">
-                            Goal
-                          </div>
-                          <div className="text-xs text-gray-600 break-words">
-                            {goal.statement}
+                          <div className="space-y-1.5 text-xs ml-6">
+                            {strategicGoals.map((goal, idx) => {
+                              const isConflict = goal.status === 'conflict';
+                              return (
+                                <div key={idx} className="text-gray-900">
+                                  {goal.goal_id} {goal.name} —{' '}
+                                  <span className={`font-semibold ${isConflict ? 'text-amber-600' : 'text-green-600'}`}>
+                                    {isConflict ? '충돌' : '부합'}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                            {strategicGoals.length === 0 && supportsEdges.map((edge: any, idx: number) => {
+                              const targetNode = graphNodes.find((n: any) => n.id === edge.target);
+                              if (targetNode) {
+                                return (
+                                  <div key={idx} className="text-gray-900">
+                                    {targetNode.label} — <span className="font-semibold text-green-600">부합</span>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })}
+                            {strategicGoals.length === 0 && conflictsEdges.map((edge: any, idx: number) => {
+                              const targetNode = graphNodes.find((n: any) => n.id === edge.target);
+                              if (targetNode) {
+                                return (
+                                  <div key={idx} className="text-gray-900">
+                                    {targetNode.label} — <span className="font-semibold text-amber-600">충돌</span>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })}
                           </div>
                         </div>
-                      </div>
-                    ));
+                      );
+                    }
+                    return null;
                   })()}
 
-                  {/* Cost - only show if not Unknown */}
-                  {extractCost(decisionResult) !== 'Unknown' && (
-                    <div className="flex items-start gap-2.5 bg-green-50 border border-green-200 rounded-xl px-3.5 py-2.5">
-                      <DollarSign className="w-3.5 h-3.5 text-green-600 mt-0.5 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs text-green-700 font-semibold">
-                          Cost
-                        </div>
-                        <div className="text-xs text-gray-600 break-words">
-                          {extractCost(decisionResult)}
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                  {/* 재무 영향 */}
+                  {(() => {
+                    const graphEdges = decisionResult?.graph_payload?.edges || [];
+                    const graphNodes = decisionResult?.graph_payload?.nodes || [];
+                    const exceedsEdges = graphEdges.filter((e: any) => e.relation === 'EXCEEDS_THRESHOLD' || e.predicate === 'EXCEEDS_THRESHOLD');
+                    const approvers = graphNodes.filter((n: any) => n.type === 'ACTOR' || n.type === 'Approver' || n.type === 'APPROVER');
+                    const owners = extractOwners(decisionResult);
+                    const budgetImpact = decisionResult?.governance_decision?.budget_impact;
 
-                  {/* Data - only show if not Unknown */}
-                  {extractDataType(decisionResult) !== 'Unknown' && (
-                    <div className="flex items-start gap-2.5 bg-purple-50 border border-purple-200 rounded-xl px-3.5 py-2.5">
-                      <Database className="w-3.5 h-3.5 text-purple-600 mt-0.5 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs text-purple-700 font-semibold">
-                          Data
+                    if (budgetImpact || owners.length > 0 || exceedsEdges.length > 0 || approvers.length > 0) {
+                      return (
+                        <div className="bg-green-50 border border-green-200 rounded-xl px-3.5 py-2.5">
+                          <div className="flex items-start gap-2.5 mb-3">
+                            <DollarSign className="w-3.5 h-3.5 text-green-600 mt-0.5 flex-shrink-0" />
+                            <div className="text-xs text-green-700 font-semibold">
+                              재무 영향
+                            </div>
+                          </div>
+                          <div className="space-y-1.5 text-xs ml-6">
+                            {budgetImpact && (
+                              <div className="text-gray-900">{budgetImpact}</div>
+                            )}
+                            {!budgetImpact && exceedsEdges.length > 0 && exceedsEdges.map((edge: any, idx: number) => {
+                              const props = edge.properties;
+                              if (props && props.observed && props.threshold) {
+                                const ratio = Math.floor(props.observed / props.threshold);
+                                return (
+                                  <div key={idx} className="text-gray-900">
+                                    잔여 예산 대비 <span className="font-semibold text-red-600">{ratio}배 초과</span>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })}
+                            {owners.filter(o => o.name || o.role).map((owner, idx) => (
+                              <div key={idx} className="text-gray-900">
+                                <span className="font-semibold">{owner.role ?? owner.name}</span> 승인 필요
+                              </div>
+                            ))}
+                            {owners.length === 0 && approvers.map((approver: any, idx: number) => (
+                              <div key={idx} className="text-gray-900">
+                                <span className="font-semibold">{approver.label}</span> 승인 필요
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                        <div className="text-xs text-gray-600 break-words">
-                          {extractDataType(decisionResult)}
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                      );
+                    }
+                    return null;
+                  })()}
 
-                  {/* KPIs - only show if metric exists */}
-                  {extractKPIs(decisionResult).filter(k => k.metric).map((kpi, idx) => (
-                    <div key={`kpi-${idx}`} className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5">
-                      <TrendingUp className="w-3.5 h-3.5 text-amber-600 mt-0.5 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs text-amber-700 font-semibold">
-                          KPI
-                        </div>
-                        <div className="text-xs text-gray-600 break-words">
-                          {kpi.metric}{kpi.target ? ` ${kpi.target}` : ''}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                  {/* 리스크 수준 */}
+                  {(() => {
+                    const flags = decisionResult?.governance?.flags || [];
+                    if (flags.length > 0) {
+                      const flagsByCategory: Record<string, any[]> = {};
+                      flags.forEach((flag: any) => {
+                        const category = flag.category || 'other';
+                        if (!flagsByCategory[category]) flagsByCategory[category] = [];
+                        flagsByCategory[category].push(flag);
+                      });
 
-                  {/* Risks - only show if description exists */}
-                  {extractRisks(decisionResult).filter(r => r.description).map((risk, idx) => (
-                    <div key={`risk-${idx}`} className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5">
-                      <FileText className="w-3.5 h-3.5 text-red-600 mt-0.5 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs text-red-700 font-semibold">
-                          위험 요소
-                        </div>
-                        <div className="text-xs text-gray-600 break-words">
-                          {risk.description}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                      const categoryNames: Record<string, string> = {
+                        'financial': '재무 위험',
+                        'strategic': '전략 위험',
+                        'compliance': '컴플라이언스 위험',
+                        'operational': '운영 위험',
+                        'governance': '정책 위험',
+                      };
 
-                  {/* Show placeholder if nothing extracted yet */}
+                      // Compute per-category severity (mapped categories only)
+                      const severityRank: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
+                      const mappedCategorySeverities = Object.entries(flagsByCategory)
+                        .filter(([cat]) => categoryNames[cat])
+                        .map(([, catFlags]) => {
+                          const s = catFlags.map((f: any) => f.severity?.toLowerCase()).filter(Boolean);
+                          if (s.includes('critical')) return 'critical';
+                          if (s.includes('high')) return 'high';
+                          if (s.includes('medium')) return 'medium';
+                          return 'low';
+                        });
+
+                      let overallRisk: string;
+                      if (mappedCategorySeverities.length === 0) {
+                        overallRisk = 'LOW';
+                      } else {
+                        const hasHighOrAbove = mappedCategorySeverities.some(s => severityRank[s] >= 2); // high or critical
+                        const hasLowOrMedium = mappedCategorySeverities.some(s => severityRank[s] <= 1); // low or medium
+                        if (hasHighOrAbove && !hasLowOrMedium) {
+                          // 모두 높음/매우높음 → 매우 높음
+                          overallRisk = 'CRITICAL';
+                        } else if (hasHighOrAbove && hasLowOrMedium) {
+                          // 높음/매우높음과 낮음/중간 혼재 → 높음
+                          overallRisk = 'HIGH';
+                        } else {
+                          // 모두 중간/낮음 → 낮음
+                          overallRisk = 'LOW';
+                        }
+                      }
+                      const overallRiskKorean = overallRisk === 'CRITICAL' ? '매우 높음' : overallRisk === 'HIGH' ? '높음' : overallRisk === 'MEDIUM' ? '중간' : '낮음';
+
+                      return (
+                        <div className="bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5">
+                          <div className="flex items-start gap-2.5 mb-3">
+                            <FileText className="w-3.5 h-3.5 text-red-600 mt-0.5 flex-shrink-0" />
+                            <div className="text-xs text-red-700 font-semibold">
+                              리스크 수준
+                            </div>
+                          </div>
+                          <div className="space-y-1.5 text-xs ml-6">
+                            {Object.entries(flagsByCategory).map(([category, categoryFlags]) => {
+                              const categoryName = categoryNames[category];
+                              if (!categoryName) return null;
+
+                              const categorySeverities = categoryFlags.map(f => f.severity?.toLowerCase()).filter(Boolean);
+                              const categoryHasCritical = categorySeverities.includes('critical');
+                              const categoryHasHigh = categorySeverities.includes('high');
+                              const categoryHasMedium = categorySeverities.includes('medium');
+                              const categorySeverity = categoryHasCritical ? 'CRITICAL' : categoryHasHigh ? 'HIGH' : categoryHasMedium ? 'MEDIUM' : 'LOW';
+                              const categorySeverityKorean = categorySeverity === 'CRITICAL' ? '매우 높음' : categorySeverity === 'HIGH' ? '높음' : categorySeverity === 'MEDIUM' ? '중간' : '낮음';
+                              const severityColor = categorySeverity === 'CRITICAL' ? 'text-red-600' : categorySeverity === 'HIGH' ? 'text-red-600' : categorySeverity === 'MEDIUM' ? 'text-amber-600' : 'text-green-600';
+
+                              // Remove duplicate messages
+                              const uniqueMessages = Array.from(new Set(categoryFlags.map((f: any) => f.message).filter(Boolean)));
+
+                              return (
+                                <div key={category} className="space-y-1">
+                                  <div className="text-gray-900">
+                                    <span className="font-semibold">{categoryName}:</span> <span className={`font-semibold ${severityColor}`}>{categorySeverityKorean}</span>
+                                  </div>
+                                  {uniqueMessages.map((message: string, idx: number) => (
+                                    <div key={idx} className="ml-2 text-gray-600 text-xs bg-white/60 rounded px-2 py-1">
+                                      {message}
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })}
+                            <div className="pt-2 mt-1 border-t border-red-300">
+                              <div className="text-gray-900">
+                                <span className="font-semibold">종합 위험도:</span> <span className={`font-semibold ${overallRisk === 'CRITICAL' ? 'text-red-600' : overallRisk === 'HIGH' ? 'text-red-600' : overallRisk === 'MEDIUM' ? 'text-amber-600' : 'text-green-600'}`}>
+                                  {overallRiskKorean}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
                   {!decisionResult && (
                     <p className="text-xs text-gray-400 italic">
-                      분석 완료 후 엔티티가 표시됩니다...
+                      분석 완료 후 영향 요약이 표시됩니다...
                     </p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Ontology Triples */}
-            {showExtractedData && (
-              <div className="space-y-3 pt-2 animate-in fade-in duration-700">
-                <h3 className="text-sm font-semibold text-gray-900">
-                  온톨로지 관계 구조
-                </h3>
-                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2 font-mono text-xs">
-                  {/* Actors - only show if we have data */}
-                  {extractOwners(decisionResult).map((owner, idx) => (
-                    <div key={`triple-actor-${idx}`} className="text-gray-600">
-                      <span className="text-blue-600 font-semibold">
-                        {owner.role ?? owner.name ?? '담당자'}
-                      </span>{" "}
-                      → 담당함 →{" "}
-                      <span className="text-cyan-600 font-semibold">
-                        의사결정
-                      </span>
-                    </div>
-                  ))}
-
-                  {/* Goals - only show if we have data */}
-                  {extractGoals(decisionResult).map((goal, idx) => (
-                    <div key={`triple-goal-${idx}`} className="text-gray-600">
-                      <span className="text-cyan-600 font-semibold">
-                        의사결정
-                      </span>{" "}
-                      → 목표로 설정함 →{" "}
-                      <span className="text-cyan-600 font-semibold">
-                        {goal.statement}
-                      </span>
-                    </div>
-                  ))}
-
-                  {/* Cost - only show if not Unknown */}
-                  {extractCost(decisionResult) !== 'Unknown' && (
-                    <div className="text-gray-600">
-                      <span className="text-cyan-600 font-semibold">
-                        의사결정
-                      </span>{" "}
-                      → 비용이 발생함 →{" "}
-                      <span className="text-green-600 font-semibold">
-                        {extractCost(decisionResult)}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Region - only show if not Unknown */}
-                  {extractRegion(decisionResult) !== 'Unknown' && (
-                    <div className="text-gray-600">
-                      <span className="text-cyan-600 font-semibold">
-                        의사결정
-                      </span>{" "}
-                      → 지역에 영향을 미침 →{" "}
-                      <span className="text-blue-600 font-semibold">
-                        {extractRegion(decisionResult)}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Data - only show if not Unknown */}
-                  {extractDataType(decisionResult) !== 'Unknown' && (
-                    <div className="text-gray-600">
-                      <span className="text-cyan-600 font-semibold">
-                        의사결정
-                      </span>{" "}
-                      → 데이터를 활용함 →{" "}
-                      <span className="text-purple-600 font-semibold">
-                        {extractDataType(decisionResult)}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* KPIs - only show if we have data */}
-                  {extractKPIs(decisionResult).map((kpi, idx) => (
-                    <div key={`triple-kpi-${idx}`} className="text-gray-600">
-                      <span className="text-cyan-600 font-semibold">
-                        의사결정
-                      </span>{" "}
-                      → KPI로 측정함 →{" "}
-                      <span className="text-amber-600 font-semibold">
-                        {kpi.metric}{kpi.target ? `: ${kpi.target}` : ''}
-                      </span>
-                    </div>
-                  ))}
-
-                  {/* Risks - only show if we have data */}
-                  {extractRisks(decisionResult).map((risk, idx) => (
-                    <div key={`triple-risk-${idx}`} className="text-gray-600">
-                      <span className="text-cyan-600 font-semibold">
-                        의사결정
-                      </span>{" "}
-                      → 위험 요소를 포함함 →{" "}
-                      <span className="text-red-600 font-semibold">
-                        {risk.description}
-                      </span>
-                    </div>
-                  ))}
-
-                  {/* Show placeholder if nothing extracted yet */}
-                  {!decisionResult && (
-                    <div className="text-gray-400 italic">
-                      분석 완료 후 트리플이 표시됩니다...
-                    </div>
                   )}
                 </div>
               </div>
@@ -1291,13 +1300,14 @@ export function GovernanceConsole() {
             {/* Graph Area */}
             <div
               className="flex-1 rounded-xl border border-gray-200 relative overflow-hidden bg-white shadow-sm"
-              style={{
-                backgroundImage: `radial-gradient(circle at center, rgba(209, 213, 219, 0.3) 1px, transparent 1px)`,
-                backgroundSize: "24px 24px",
-              }}
             >
-              {/* Data-Driven SVG Mind Map */}
-              <svg
+              <ReactFlowProvider>
+                <OntologyGraph data={decisionResult} />
+              </ReactFlowProvider>
+            </div>
+
+            {/* REMOVED: Old SVG Graph - Replaced with OntologyGraph */}
+            {false && <svg
                 className="w-full h-full"
                 viewBox="0 0 1100 650"
               >
@@ -1709,38 +1719,8 @@ export function GovernanceConsole() {
                     </g>
                   )}
                 </g>
-              </svg>
-
-              {/* Zoom Controls */}
-              <div className="absolute bottom-4 right-4 flex flex-col gap-2">
-                <button
-                  onClick={() =>
-                    setZoom(Math.min(2, zoom + 0.25))
-                  }
-                  disabled={zoom >= 2}
-                  className={`w-9 h-9 bg-white border border-gray-200 rounded-lg flex items-center justify-center transition-all shadow-sm ${
-                    zoom >= 2
-                      ? "opacity-40 cursor-not-allowed"
-                      : "hover:bg-gray-50 hover:border-gray-300"
-                  }`}
-                >
-                  <Plus className="w-4 h-4 text-gray-600" />
-                </button>
-                <button
-                  onClick={() =>
-                    setZoom(Math.max(0.5, zoom - 0.25))
-                  }
-                  disabled={zoom <= 0.5}
-                  className={`w-9 h-9 bg-white border border-gray-200 rounded-lg flex items-center justify-center transition-all shadow-sm ${
-                    zoom <= 0.5
-                      ? "opacity-40 cursor-not-allowed"
-                      : "hover:bg-gray-50 hover:border-gray-300"
-                  }`}
-                >
-                  <Minus className="w-4 h-4 text-gray-600" />
-                </button>
-              </div>
-            </div>
+              </svg>}
+            {/* END REMOVED: Old SVG Graph */}
 
             {/* Bottom Alert Banner - o1 Reasoning Output - Only show if conflicts detected */}
             {showReasoning && reasoningData.conflicts.length > 0 && (
