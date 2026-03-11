@@ -23,6 +23,7 @@ import type {
 
 interface OntologyGraphProps {
   data: DecisionResponse | null;
+  lang?: string;
 }
 
 // Predicate label mapping (Korean)
@@ -46,6 +47,27 @@ const PREDICATE_LABELS: Record<string, string> = {
   USES_DATA: '데이터 사용',
 };
 
+// Predicate label mapping (English)
+const PREDICATE_LABELS_EN: Record<string, string> = {
+  OWNS: 'Owns',
+  REQUIRES_APPROVAL_BY: 'Requires Approval',
+  GOVERNED_BY: 'Governed By',
+  TRIGGERS: 'Triggers Risk',
+  TRIGGERS_RULE: 'Triggers Rule',
+  HAS_GOAL: 'Goal',
+  HAS_KPI: 'KPI',
+  HAS_COST: 'Cost',
+  AFFECTS_REGION: 'Affects',
+  HAS_RISK: 'Has Risk',
+  EXCEEDS_THRESHOLD: 'Exceeds Threshold',
+  SUPPORTS: 'Supports',
+  CONFLICTS_WITH: 'Conflicts With',
+  MEASURED_BY: 'Measured By',
+  GENERATES_RISK: 'Generates Risk',
+  ESCALATES_TO: 'Escalates To',
+  USES_DATA: 'Uses Data',
+};
+
 // Core predicates (shown by default)
 const CORE_PREDICATES = new Set([
   'HAS_GOAL',
@@ -61,7 +83,8 @@ const CORE_PREDICATES = new Set([
 ]);
 
 // Get predicate label
-function getPredicateLabel(predicate: string): string {
+function getPredicateLabel(predicate: string, lang?: string): string {
+  if (lang === 'en') return PREDICATE_LABELS_EN[predicate] || predicate;
   return PREDICATE_LABELS[predicate] || predicate;
 }
 
@@ -78,9 +101,9 @@ function CircleNode({ data, selected }: NodeProps) {
   const textColor = isConflict ? '#92400E' : style.textColor;
 
   // Decision nodes are larger
-  const nodeSize = isDecision ? 300 : 250;
-  const fontSize = isDecision ? 26 : 24;
-  const typeLabelSize = isDecision ? 20 : 18;
+  const nodeSize = isDecision ? 280 : 240;
+  const fontSize = isDecision ? 13 : 12;
+  const typeLabelSize = isDecision ? 10 : 9;
 
   return (
     <>
@@ -104,10 +127,11 @@ function CircleNode({ data, selected }: NodeProps) {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '20px',
+          padding: '36px',
           cursor: 'pointer',
           transition: 'all 0.2s ease',
           opacity: isDimmed ? 0.3 : 1,
+          overflow: 'hidden',
         }}
       >
         <div
@@ -121,7 +145,7 @@ function CircleNode({ data, selected }: NodeProps) {
             letterSpacing: '0.5px',
           }}
         >
-          {style.label}
+          {data.lang === 'en' ? (style.label_en || style.label) : style.label}
         </div>
         <div
           style={{
@@ -129,12 +153,14 @@ function CircleNode({ data, selected }: NodeProps) {
             fontWeight: 600,
             color: textColor,
             textAlign: 'center',
-            lineHeight: '1.2',
+            lineHeight: '1.4',
             wordBreak: 'break-word',
             overflowWrap: 'break-word',
             maxWidth: '100%',
+            display: '-webkit-box',
+            WebkitLineClamp: 4,
+            WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
-            hyphens: 'auto',
           }}
           title={data.fullLabel || data.label}
         >
@@ -158,6 +184,18 @@ function shortenLabel(label: string, maxLength = 24): string {
   return label.substring(0, maxLength - 1) + '…';
 }
 
+// Returns true if the string contains Korean characters
+function hasKorean(str: string | null | undefined): boolean {
+  if (!str) return false;
+  return /[\u3131-\u314e\u314f-\u3163\uac00-\ud7a3]/.test(str);
+}
+
+// Return an English-safe label candidate, or null if the string is Korean
+function enSafe(str: string | null | undefined): string | null {
+  if (!str || hasKorean(str)) return null;
+  return str;
+}
+
 // Clean label by removing type-specific prefixes
 function cleanLabel(label: string, nodeType: string): string {
   if (!label) return '';
@@ -175,7 +213,7 @@ function cleanLabel(label: string, nodeType: string): string {
   return label;
 }
 
-export function OntologyGraph({ data }: OntologyGraphProps) {
+export function OntologyGraph({ data, lang }: OntologyGraphProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -184,6 +222,7 @@ export function OntologyGraph({ data }: OntologyGraphProps) {
 
   // Parse graph from graph_payload.nodes and graph_payload.edges ONLY
   const { parsedNodes, parsedEdges } = useMemo(() => {
+    const isEn = lang === 'en';
     if (!data?.graph_payload) {
       return { parsedNodes: [], parsedEdges: [] };
     }
@@ -202,7 +241,18 @@ export function OntologyGraph({ data }: OntologyGraphProps) {
     // Convert backend nodes to React Flow nodes
     graphPayload.nodes.forEach((node: GraphPayloadNode) => {
       const normalizedType = normalizeNodeType(node.type);
-      const rawLabel = node.label || node.id;
+      const rawLabel = isEn
+        ? (
+            enSafe(node.label_en) ||
+            enSafe(node.properties?.label_en as string) ||
+            enSafe(node.properties?.name_en as string) ||
+            enSafe(node.properties?.role_en as string) ||
+            // KPI fallback: target value (e.g. "20%", "$1M") is usually ASCII
+            (normalizedType === 'KPI' ? enSafe(String(node.properties?.target ?? '')) || enSafe(node.properties?.metric as string) : null) ||
+            node.label ||
+            node.id
+          )
+        : (node.label || node.id);
       const cleanedLabel = cleanLabel(rawLabel, normalizedType);
 
       rfNodes.push({
@@ -213,6 +263,7 @@ export function OntologyGraph({ data }: OntologyGraphProps) {
           label: cleanedLabel,
           fullLabel: cleanedLabel,
           type: normalizedType,
+          lang,
           properties: node.properties,
           highlighted: false,
           dimmed: false,
@@ -248,7 +299,7 @@ export function OntologyGraph({ data }: OntologyGraphProps) {
         return;
       }
 
-      const predicateLabel = getPredicateLabel(predicate);
+      const predicateLabel = getPredicateLabel(predicate, lang);
 
       // Check if edge is risk-related
       const targetNode = graphPayload.nodes.find((n: any) => n.id === target);
@@ -291,7 +342,7 @@ export function OntologyGraph({ data }: OntologyGraphProps) {
     console.log('[OntologyGraph] Parsed edges:', rfEdges.length);
 
     return { parsedNodes: rfNodes, parsedEdges: rfEdges };
-  }, [data]);
+  }, [data, lang]);
 
   // Apply edge filter
   const filteredEdges = useMemo(() => {
@@ -415,7 +466,7 @@ export function OntologyGraph({ data }: OntologyGraphProps) {
         }}
       >
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-400"></div>
-        <div>그래프 생성 중…</div>
+        <div>{lang === 'en' ? 'Generating graph…' : '그래프 생성 중…'}</div>
       </div>
     );
   }

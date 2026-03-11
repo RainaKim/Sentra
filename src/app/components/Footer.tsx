@@ -1,4 +1,8 @@
+import { useLang } from '../contexts/LangContext';
+
 export function Footer() {
+  const { t } = useLang();
+
   return (
     <footer className="border-t border-gray-200 bg-white">
       <div className="max-w-[1440px] mx-auto px-16 py-16">
@@ -13,7 +17,7 @@ export function Footer() {
             <span className="text-2xl font-bold tracking-tight text-gray-900">DecisionGovernance AI</span>
           </div>
           <p className="text-sm text-gray-600 leading-relaxed">
-            AI 의사결정을 위한 엔터프라이즈 거버넌스 레이어
+            {t('footer.tagline')}
           </p>
         </div>
 

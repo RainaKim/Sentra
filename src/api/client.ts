@@ -11,10 +11,15 @@
 
 import { API_BASE_URL } from "../config";
 import type {
+  ApiError,
+  AuthResponse,
   Company,
   CreateDecisionResponse,
   DecisionResponse,
   DemoFixture,
+  UserResponse,
+  WorkspaceMetrics,
+  WorkspaceDecisionsResponse,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -24,21 +29,31 @@ import type {
 async function apiFetch<T>(
   path: string,
   init?: RequestInit,
+  token?: string,
 ): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
-  const res = await fetch(url, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-    ...init,
-  });
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(init?.headers as Record<string, string> ?? {}),
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const res = await fetch(url, { ...init, headers });
 
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(
-      `API ${res.status} ${res.statusText}${body ? `: ${body}` : ""}`,
-    );
+    let message = `${res.status} ${res.statusText}`;
+    try {
+      const errBody = await res.json() as ApiError;
+      if (typeof errBody.detail === "string") {
+        message = errBody.detail;
+      } else if (Array.isArray(errBody.detail)) {
+        message = errBody.detail.map((d) => d.msg).join(", ");
+      }
+    } catch {
+      // fall through with status message
+    }
+    throw new Error(message);
   }
 
   return res.json() as Promise<T>;
@@ -46,6 +61,56 @@ async function apiFetch<T>(
 
 // ---------------------------------------------------------------------------
 // Public API functions
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+/** POST /v1/auth/login — 401 on bad credentials, 403 if inactive */
+export async function apiLogin(
+  email: string,
+  password: string,
+): Promise<AuthResponse> {
+  return apiFetch<AuthResponse>("/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+/** POST /v1/auth/signup — 409 if email already registered */
+export async function apiSignup(
+  email: string,
+  password: string,
+  name?: string,
+  role?: import("./types").UserRole,
+): Promise<AuthResponse> {
+  return apiFetch<AuthResponse>("/v1/auth/signup", {
+    method: "POST",
+    body: JSON.stringify({
+      email,
+      password,
+      ...(name ? { name } : {}),
+      ...(role ? { role } : {}),
+    }),
+  });
+}
+
+/** GET /v1/me — 401 if token expired/invalid, 403 if account inactive */
+export async function getMe(token: string): Promise<UserResponse> {
+  return apiFetch<UserResponse>("/v1/me", {}, token);
+}
+
+/** PATCH /v1/me — update name and/or department_name */
+export async function updateMe(
+  token: string,
+  data: import("./types").UpdateMeRequest,
+): Promise<UserResponse> {
+  return apiFetch<UserResponse>("/v1/me", { method: "PATCH", body: JSON.stringify(data) }, token);
+}
+
+// ---------------------------------------------------------------------------
+// Service
 // ---------------------------------------------------------------------------
 
 /** GET / — health / service info */
@@ -59,8 +124,8 @@ export async function getHealth(): Promise<Record<string, unknown>> {
 }
 
 /** GET /v1/companies — returns list of demo companies (3 items) */
-export async function getCompanies(): Promise<Company[]> {
-  const data = await apiFetch<unknown>("/v1/companies");
+export async function getCompanies(token?: string): Promise<Company[]> {
+  const data = await apiFetch<unknown>("/v1/companies", {}, token);
 
   // Handle new backend format: {companies: [...], total: N}
   if (data && typeof data === 'object' && 'companies' in data) {
@@ -93,20 +158,24 @@ export async function getCompany(companyId: string): Promise<Company> {
  *   use_o1_governance  bool (optional, default false)
  *   use_o1_graph       bool (optional, default false)
  */
-export async function createDecision(params: {
-  company_id: string;
-  input_text: string;
-}): Promise<CreateDecisionResponse> {
+export async function createDecision(
+  params: { company_id: string; input_text: string; lang?: string; agent_name?: string; agent_name_en?: string; workspace_decision_id?: string },
+  token?: string,
+): Promise<CreateDecisionResponse> {
   const body = JSON.stringify({
     company_id: params.company_id,
     input_text: params.input_text,
     use_o1_governance: false,
     use_o1_graph: false,
+    ...(params.lang ? { lang: params.lang } : {}),
+    ...(params.agent_name ? { agent_name: params.agent_name } : {}),
+    ...(params.agent_name_en ? { agent_name_en: params.agent_name_en } : {}),
+    ...(params.workspace_decision_id ? { workspace_decision_id: params.workspace_decision_id } : {}),
   });
   const resp = await apiFetch<CreateDecisionResponse>("/v1/decisions", {
     method: "POST",
     body,
-  });
+  }, token);
 
   if (!resp?.decision_id) {
     throw new Error("POST /v1/decisions returned no decision_id");
@@ -114,12 +183,54 @@ export async function createDecision(params: {
   return resp;
 }
 
+/**
+ * POST /v1/workspace/decisions — creates workspace record + pipeline + runs governance.
+ * Returns { workspace_decision_id, analysis_decision_id, stream_url }
+ * Use analysis_decision_id for SSE streaming and full result fetch.
+ */
+export interface CreateWorkspaceDecisionResponse {
+  workspace_decision_id: string;
+  analysis_decision_id: string;
+  stream_url?: string;
+}
+
+export async function createWorkspaceDecision(
+  params: { company_id: string; input_text: string; lang?: string; agent_name?: string; agent_name_en?: string; department?: string; department_en?: string },
+  token?: string,
+): Promise<CreateWorkspaceDecisionResponse> {
+  const body = JSON.stringify({
+    company_id: params.company_id,
+    input_text: params.input_text,
+    use_o1_governance: false,
+    use_o1_graph: false,
+    ...(params.lang ? { lang: params.lang } : {}),
+    ...(params.agent_name ? { agent_name: params.agent_name } : {}),
+    ...(params.agent_name_en ? { agent_name_en: params.agent_name_en } : {}),
+    ...(params.department ? { department: params.department } : {}),
+    ...(params.department_en ? { department_en: params.department_en } : {}),
+  });
+  const resp = await apiFetch<CreateWorkspaceDecisionResponse>("/v1/workspace/decisions", {
+    method: "POST",
+    body,
+  }, token);
+
+  if (!resp?.analysis_decision_id) {
+    throw new Error("POST /v1/workspace/decisions returned no analysis_decision_id");
+  }
+  return resp;
+}
+
 /** GET /v1/decisions/{id} — full ConsolePayloadResponse */
 export async function getDecision(
   decisionId: string,
+  token?: string,
+  lang?: string,
 ): Promise<DecisionResponse> {
+  const qs = lang ? `?lang=${encodeURIComponent(lang)}` : '';
   const resp = await apiFetch<DecisionResponse>(
-    `/v1/decisions/${decisionId}`,
+    `/v1/decisions/${decisionId}${qs}`,
+    {},
+    token,
   );
   if (!resp?.decision_id) {
     throw new Error("GET /v1/decisions/{id} returned no decision_id");
@@ -156,8 +267,15 @@ export function streamDecision(
   decisionId: string,
   onEvent: SSEEventCallback,
   onError?: (err: Event) => void,
+  token?: string,
+  lang?: string,
 ): EventSource {
-  const url = `${API_BASE_URL}/v1/decisions/${decisionId}/stream`;
+  const base = `${API_BASE_URL}/v1/decisions/${decisionId}/stream`;
+  const params = new URLSearchParams();
+  if (token) params.set('token', token);
+  if (lang) params.set('lang', lang);
+  const qs = params.toString();
+  const url = qs ? `${base}?${qs}` : base;
   const es = new EventSource(url);
 
   const handleMessage = (type: string) => (evt: MessageEvent) => {
@@ -182,6 +300,34 @@ export function streamDecision(
   };
 
   return es;
+}
+
+/** GET /v1/workspace/metrics — summary counts for today */
+export async function getWorkspaceMetrics(token: string): Promise<WorkspaceMetrics> {
+  return apiFetch<WorkspaceMetrics>("/v1/workspace/metrics", {}, token);
+}
+
+/** GET /v1/workspace/decisions — paginated decision feed */
+export async function getWorkspaceDecisions(
+  token: string,
+  params?: {
+    status?: string;
+    limit?: number;
+    offset?: number;
+    sort?: string;
+  },
+): Promise<WorkspaceDecisionsResponse> {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  if (params?.limit !== undefined) query.set("limit", String(params.limit));
+  if (params?.offset !== undefined) query.set("offset", String(params.offset));
+  if (params?.sort) query.set("sort", params.sort);
+  const qs = query.toString();
+  return apiFetch<WorkspaceDecisionsResponse>(
+    `/v1/workspace/decisions${qs ? `?${qs}` : ""}`,
+    {},
+    token,
+  );
 }
 
 /** GET /v1/fixtures?company_id={companyId} — returns demo fixtures for a company */

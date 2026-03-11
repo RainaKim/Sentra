@@ -2,25 +2,209 @@ import {
   AlertTriangle,
   Plus,
   Minus,
-  Target,
-  DollarSign,
-  Database,
-  TrendingUp,
-  FileText,
-  Users,
   XCircle,
+  Bot,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLocation } from "react-router";
+import { useLang } from "../contexts/LangContext";
+import { useAuth } from "../contexts/AuthContext";
 import { ReactFlowProvider } from "reactflow";
 import { DecisionPackReport } from "./DecisionPackReport";
+import { RiskScoringPanel } from "./RiskScoringPanel";
+import { ExternalSignalsSection } from "./governance/ExternalSignalsSection";
 import { runDecisionFlow } from "../../api/decisionRunner";
+import { getCompanies } from "../../api/client";
 import { OntologyGraph } from "./ontology/OntologyGraph";
 import type { DecisionResponse, DecisionGoal, DecisionKPI, DecisionOwner, DecisionRisk, GraphPayloadNode } from "../../api/types";
+import { EvidenceList } from "./governance/EvidenceList";
+import { EvidenceToggle } from "./governance/EvidenceToggle";
 
 // Demo fallback text shown when navigating directly to /console
 const DEMO_INPUT =
   'unknown';
+
+// Korean → English industry name translation (for breadcrumb pre-fetch phase)
+const INDUSTRY_KO_TO_EN: Record<string, string> = {
+  '기업 금융': 'Corporate Finance',
+  '금융': 'Finance',
+  '제조업': 'Manufacturing',
+  '제조': 'Manufacturing',
+  '유통': 'Distribution',
+  '소매': 'Retail',
+  '의료': 'Healthcare',
+  '헬스케어': 'Healthcare',
+  '기술': 'Technology',
+  '정보기술': 'Information Technology',
+  'IT': 'IT',
+  '에너지': 'Energy',
+  '건설': 'Construction',
+  '부동산': 'Real Estate',
+  '물류': 'Logistics',
+  '교육': 'Education',
+  '공공': 'Public Sector',
+  '화학': 'Chemical',
+  '바이오': 'Biotech',
+  '식품': 'Food & Beverage',
+  '식음료': 'Food & Beverage',
+};
+
+function translateIndustry(industry: string | undefined, lang: string): string | undefined {
+  if (!industry) return undefined;
+  if (lang !== 'en') return industry;
+  return INDUSTRY_KO_TO_EN[industry] ?? industry;
+}
+
+// ---------------------------------------------------------------------------
+// Evidence toggle sub-components (rule evidence, approval chain evidence)
+// ---------------------------------------------------------------------------
+
+
+interface FiredRuleRowProps {
+  rule: import('../../api/types').GovernanceRule;
+  idx: number;
+  isFirst: boolean;
+  t: (k: string) => string;
+  lang?: string;
+}
+
+function FiredRuleRow({ rule, idx, isFirst, t, lang }: FiredRuleRowProps) {
+  const [showEvidence, setShowEvidence] = useState(false);
+  const status = rule.status?.toUpperCase() ?? 'UNKNOWN';
+  const RULE_STATUS_KR: Record<string, string> = {
+    PASSED: t('console.right.rules.passed'),
+    TRIGGERED: t('report.gov.triggered'),
+    VIOLATION: t('report.gov.violation'),
+    CHECKING: '확인 중',
+    PENDING: t('console.right.approval.status.pending'),
+  };
+  const displayStatus = RULE_STATUS_KR[status] ?? status;
+  const isViolation = status === 'VIOLATION';
+  const statusColor = isViolation ? 'text-red-600' : 'text-amber-600';
+  const borderColor = isViolation ? 'border-l-red-500' : 'border-l-amber-500';
+  const bgColor = isViolation ? 'bg-red-50' : '';
+  const descColor = isViolation ? 'text-red-600' : 'text-gray-600';
+  const evidence = rule.evidence ?? [];
+
+  return (
+    <div key={rule.rule_id ?? idx}>
+      {!isFirst && <div className="h-px bg-gray-200"></div>}
+      <div className={`px-4 py-3.5 hover:bg-white transition-colors border-l-3 ${borderColor} ${bgColor}`}>
+        <div className="flex items-start justify-between mb-1.5 gap-2">
+          <span className="text-xs font-bold text-gray-900 break-words flex-1">
+            {rule.rule_id} {lang === 'en' ? (rule.name_en ?? rule.name) : rule.name}
+          </span>
+          <span className={`text-xs font-bold uppercase tracking-wide ${statusColor} flex-shrink-0`}>
+            {displayStatus}
+          </span>
+        </div>
+        {(rule.description ?? rule.why) && (
+          <div className="mb-2">
+            <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">
+              {t('console.right.rules.trigger')}
+            </div>
+            <p className={`text-xs ${descColor} break-words`}>
+              {lang === 'en' ? (rule.description_en ?? rule.why_en ?? rule.description ?? rule.why) : (rule.description ?? rule.why)}
+            </p>
+          </div>
+        )}
+        {(rule.consequence?.message || rule.consequence?.action) && (
+          <div className="mb-2">
+            <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">
+              {t('console.right.rules.action')}
+            </div>
+            <p className="text-xs text-gray-700 break-words">
+              {(() => {
+                const msg = lang === 'en'
+                  ? (rule.consequence?.message_en ?? rule.consequence?.message)
+                  : rule.consequence?.message;
+                if (msg) return msg;
+                const a = rule.consequence?.action ?? '';
+                if (a.includes('approval')) return lang === 'en' ? 'Approval required' : '승인 필요';
+                if (a.includes('review')) return lang === 'en' ? 'Review required' : '검토 필요';
+                if (a.includes('goal')) return lang === 'en' ? 'Goal mapping required' : '목표 매핑 필요';
+                return a.replace(/_/g, ' ');
+              })()}
+            </p>
+          </div>
+        )}
+        {evidence.length > 0 && (
+          <>
+            <EvidenceToggle expanded={showEvidence} onToggle={() => setShowEvidence((v) => !v)} />
+            {showEvidence && <EvidenceList evidence={evidence} lang={lang} />}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface ApprovalChainRowProps {
+  raw: unknown;
+  idx: number;
+  total: number;
+  t: (k: string) => string;
+  lang?: string;
+  evidence: import('../../api/types').GovernanceEvidenceItem[];
+  allRules: import('../../api/types').GovernanceRule[];
+}
+
+function ApprovalChainRow({ raw, idx, total, t, lang, evidence, allRules }: ApprovalChainRowProps) {
+  const [showEvidence, setShowEvidence] = useState(false);
+  const obj = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : null;
+  const personName = obj?.name ? String(obj.name) : typeof raw === 'string' ? raw : '—';
+  const jobTitle = obj?.role ? String(obj.role) : '—';
+  const rawStatus = obj?.status ? String(obj.status) : '';
+  const statusLabel = rawStatus === 'required' ? t('console.right.approval.status.required') : rawStatus === 'optional' ? t('console.right.approval.status.optional') : t('console.right.approval.status.pending');
+  const statusColor = rawStatus === 'required' ? 'text-red-600' : rawStatus === 'optional' ? 'text-gray-500' : 'text-amber-600';
+  const sourceRule = obj?.source_rule_id ? String(obj.source_rule_id) : '';
+
+  // Resolve reason: prefer _en fields; fall back to matching rule's description_en
+  const matchedRule = sourceRule ? allRules.find(r => r.rule_id === sourceRule) : undefined;
+  const reason = lang === 'en'
+    ? (obj?.reason_en
+        ? String(obj.reason_en)
+        : matchedRule?.description_en ?? matchedRule?.description ?? (obj?.reason ? String(obj.reason) : ''))
+    : obj?.reason ? String(obj.reason) : '';
+
+  const borderColor = rawStatus === 'required' ? 'border-l-red-500' : 'border-l-amber-500';
+
+  return (
+    <div
+      className={`px-4 py-3.5 border-l-3 ${borderColor} ${idx < total - 1 ? 'border-b border-gray-200' : ''} hover:bg-white transition-colors`}
+    >
+      <div className="flex items-start justify-between gap-2 mb-1.5">
+        <div>
+          <div className="text-xs font-bold text-gray-900 break-words">
+            {jobTitle !== '—' ? jobTitle : personName}
+          </div>
+          {jobTitle !== '—' && personName !== '—' && jobTitle !== personName && (
+            <div className="text-[10px] text-gray-400 mt-0.5">{personName}</div>
+          )}
+        </div>
+        <span className={`text-xs font-bold uppercase tracking-wide flex-shrink-0 ${statusColor}`}>
+          {statusLabel}
+        </span>
+      </div>
+      {reason && (
+        <div className="mt-1.5">
+          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">
+            {t('console.right.approval.reason')}
+          </div>
+          <div className="text-xs text-gray-600 break-words">
+            {sourceRule ? `${sourceRule}: ` : ''}{reason}
+          </div>
+        </div>
+      )}
+      {evidence.length > 0 && (
+        <>
+          <EvidenceToggle expanded={showEvidence} onToggle={() => setShowEvidence((v) => !v)} />
+          {showEvidence && <EvidenceList evidence={evidence} lang={lang} />}
+        </>
+      )}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Helper functions to extract data from backend response
@@ -67,9 +251,13 @@ function extractOwners(result: DecisionResponse | null): DecisionOwner[] {
         continue;
       }
       const personName = node.properties?.name ? String(node.properties.name) : undefined;
+      const nameEn = node.label_en ?? (node.properties?.name_en ? String(node.properties.name_en) : undefined);
+      const roleEn = node.properties?.role_en ? String(node.properties.role_en) : undefined;
       owners.push({
         name: personName ?? label,
+        name_en: nameEn,
         role: label,
+        role_en: roleEn,
       });
     }
     if (owners.length > 0) return owners;
@@ -434,16 +622,22 @@ interface GraphEdge {
 function buildGraphData(
   result: DecisionResponse | null,
   inputText: string,
+  lang?: string,
+  inputTextEn?: string,
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
+  const isEn = lang === 'en';
 
   // Try to get decision statement from graph_payload Action node first
   const actionNodes = getGraphNodes(result, 'Action');
   const actionLabel = actionNodes.length > 0 ? actionNodes[0].label : null;
-  
+  const actionLabelEn = actionNodes.length > 0 ? (actionNodes[0].label_en ?? actionNodes[0].label) : null;
+
   // Decision root node (center)
-  const decisionStatement = actionLabel ?? result?.decision?.statement ?? inputText ?? 'Decision';
+  const decisionStatement = isEn
+    ? (actionLabelEn ?? result?.decision?.statement_en ?? inputTextEn ?? actionLabel ?? result?.decision?.statement ?? inputText ?? 'Decision')
+    : (actionLabel ?? result?.decision?.statement ?? inputText ?? 'Decision');
   
   nodes.push({
     id: 'decision',
@@ -460,7 +654,9 @@ function buildGraphData(
   if (owners.length > 0) {
     const actor = owners[0];
     // Show person's name; if name equals the role (no separate name available) show just that
-    const actorLabel = actor.name ?? actor.role ?? 'Actor';
+    const actorLabel = lang === 'en'
+      ? (actor.name_en ?? actor.role_en ?? actor.name ?? actor.role ?? 'Actor')
+      : (actor.name ?? actor.role ?? 'Actor');
     nodes.push({
       id: 'actor',
       type: 'actor',
@@ -645,9 +841,17 @@ function buildReasoningData(result: DecisionResponse | null): {
 
 export function GovernanceConsole() {
   const location = useLocation();
+  const { t, lang } = useLang();
+  const { token } = useAuth();
   const flowState = (location.state ?? null) as {
     companyId?: string;
     decisionText?: string;
+    decisionTextEn?: string;
+    agentName?: string;
+    agentNameEn?: string;
+    department?: string;
+    departmentEn?: string;
+    workspaceDecisionId?: string;
   } | null;
 
   const [analysisStep, setAnalysisStep] = useState(0); // 0: loading, 1-3: steps, 4: complete
@@ -658,10 +862,23 @@ export function GovernanceConsole() {
   // Real result from backend (null when in demo mode or still processing)
   const [decisionResult, setDecisionResult] =
     useState<DecisionResponse | null>(null);
+  // Pre-fetched company info for breadcrumb during analysis
+  const [prefetchedCompany, setPrefetchedCompany] = useState<import('../../api/types').Company | null>(null);
   // Non-null when the API call fails
   const [flowError, setFlowError] = useState<string | null>(null);
   // Live trace log entries accumulated from SSE events + rule results
   const [traceLog, setTraceLog] = useState<{ text: string; color: string }[]>([]);
+
+  // Pre-fetch company info for breadcrumb
+  useEffect(() => {
+    if (!flowState?.companyId) return;
+    getCompanies(token ?? undefined)
+      .then((list) => {
+        const match = list.find((c) => c.id === flowState.companyId);
+        if (match) setPrefetchedCompany(match);
+      })
+      .catch(() => {});
+  }, [flowState?.companyId]);
 
   useEffect(() => {
     // Stage → trace log label/color mapping
@@ -700,6 +917,13 @@ export function GovernanceConsole() {
         {
           companyId: flowState.companyId,
           decisionText: flowState.decisionText,
+          token: token ?? undefined,
+          lang,
+          agentName: flowState.agentName,
+          agentNameEn: flowState.agentNameEn,
+          department: flowState.department,
+          departmentEn: flowState.departmentEn,
+          workspaceDecisionId: flowState.workspaceDecisionId,
         },
         {
           onProgress: ({ stepIndex, stage, message }) => {
@@ -823,7 +1047,7 @@ export function GovernanceConsole() {
   const showReasoning = analysisStep >= 3;
 
   // Compute graph data from decision result
-  const graphData = buildGraphData(decisionResult, flowState?.decisionText ?? '');
+  const graphData = buildGraphData(decisionResult, flowState?.decisionText ?? '', lang, flowState?.decisionTextEn);
   const reasoningData = buildReasoningData(decisionResult);
 
   // Show Decision Pack Report if requested
@@ -832,6 +1056,7 @@ export function GovernanceConsole() {
       <DecisionPackReport
         onBack={() => setShowDecisionPack(false)}
         decisionData={decisionResult ?? undefined}
+        decisionTextEn={flowState?.decisionTextEn ?? flowState?.decisionText}
       />
     );
   }
@@ -844,14 +1069,14 @@ export function GovernanceConsole() {
           <div className="flex items-center gap-3">
             <XCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
             <span className="text-xs font-semibold text-red-700">
-              분석 실패: {flowError}
+              {t('console.errorPrefix')} {flowError}
             </span>
           </div>
           <button
             onClick={() => setFlowError(null)}
             className="text-xs text-red-500 hover:text-red-700 font-medium"
           >
-            닫기
+            {t('console.errorDismiss')}
           </button>
         </div>
       )}
@@ -877,20 +1102,24 @@ export function GovernanceConsole() {
           {/* Breadcrumb */}
           <div className="text-xs text-gray-500 flex items-center gap-2.5">
             <span className="uppercase tracking-wide font-medium">
-              {decisionResult?.company?.industry ?? flowState?.companyId ?? '—'}
+              {lang === 'en'
+                ? (decisionResult?.company?.industry_en ?? translateIndustry(decisionResult?.company?.industry, lang) ?? translateIndustry(prefetchedCompany?.industry, lang) ?? '—')
+                : (decisionResult?.company?.industry ?? prefetchedCompany?.industry ?? '—')}
             </span>
             <span className="text-gray-300">›</span>
             <span className="uppercase tracking-wide font-medium">
-              {decisionResult?.company?.name ?? flowState?.companyId ?? '—'}
+              {lang === 'en'
+                ? (decisionResult?.company?.name_en ?? decisionResult?.company?.name ?? prefetchedCompany?.name_en ?? prefetchedCompany?.name ?? flowState?.companyId ?? '—')
+                : (decisionResult?.company?.name ?? prefetchedCompany?.name ?? flowState?.companyId ?? '—')}
             </span>
             <span className="text-gray-300">›</span>
             {isAnalyzing ? (
               <span className="text-blue-600 animate-pulse font-semibold uppercase tracking-wide">
-                분석중...
+                {t('console.analyzing')}
               </span>
             ) : (
               <span className="text-gray-700 font-semibold uppercase tracking-wide">
-                분석 완료
+                {t('console.complete')}
               </span>
             )}
           </div>
@@ -905,7 +1134,7 @@ export function GovernanceConsole() {
 
           {decisionResult && (
             <div className="text-xs text-gray-600">
-              <span className="text-gray-500">신뢰도:</span>{" "}
+              <span className="text-gray-500">{t('console.confidence')}</span>{" "}
               <span className="text-gray-900 font-bold">
                 {(() => {
                   const raw = decisionResult.decision_pack as Record<string, unknown> | undefined;
@@ -928,310 +1157,93 @@ export function GovernanceConsole() {
                 : "bg-gray-900 text-white hover:bg-gray-800 shadow-md hover:shadow-lg"
             }`}
           >
-            {isAnalyzing ? "분석 중..." : "의사결정 보고서 생성"}
+            {isAnalyzing ? t('console.generating') : t('console.generateReport')}
           </button>
         </div>
       </div>
 
       {/* Main Layout - 3 Columns */}
       <div className="flex h-[calc(100vh-3.5rem)]" style={{ backgroundColor: '#F1F2F7' }}>
-        {/* LEFT PANEL - Input Context & Extraction */}
+        {/* LEFT PANEL - AI Agent Decision Context */}
         <div className="w-[450px] h-full">
           <div className="pl-6 pr-2 pt-6 pb-4 h-full">
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm h-full flex flex-col overflow-hidden">
-              <div className="p-6 space-y-6 overflow-y-auto flex-1">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900 uppercase tracking-wider">
-                입력
-              </h2>
-              <span className="text-xs text-gray-400 font-mono">
-                REQ: 2048
-              </span>
-            </div>
+              <div className="p-6 space-y-5 overflow-y-auto flex-1">
 
-            {/* Tabs */}
-            <div className="flex border-b border-gray-200">
-              <button className="pb-2.5 px-1 text-xs font-bold text-gray-900 border-b-2 border-gray-900 uppercase tracking-wide">
-                텍스트
-              </button>
-              <button className="pb-2.5 px-4 text-xs font-bold text-gray-400 uppercase tracking-wide hover:text-gray-600 transition-colors">
-                문서
-              </button>
-            </div>
+                {/* Panel title */}
+                <h2 className="text-xl font-bold text-gray-900 uppercase tracking-wider">
+                  {t('console.left.title')}
+                </h2>
 
-            {/* Submitted Input (read-only) */}
-            <div>
-              <label className="text-sm font-semibold text-gray-900 block mb-4">
-                입력 수신됨
-              </label>
-              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-xs text-gray-700 leading-relaxed">
-                "{flowState?.decisionText ?? DEMO_INPUT}"
-              </div>
-            </div>
-
-
-            {/* Decision Impact Summary */}
-            {showExtractedData && (
-              <div className="space-y-3.5 pt-2 animate-in fade-in duration-500">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-900">
-                    의사결정 영향 요약
-                  </h3>
-                  <span className="text-xs text-green-600 font-semibold flex items-center gap-1">
-                    <div className="w-1 h-1 rounded-full bg-green-600"></div>
-                    완료
-                  </span>
+                {/* Decision Proposal */}
+                <div>
+                  <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
+                    {t('console.left.proposal')}
+                  </div>
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-800 leading-relaxed font-medium">
+                    "{lang === 'en'
+                      ? (flowState?.decisionTextEn ?? flowState?.decisionText ?? DEMO_INPUT)
+                      : (flowState?.decisionText ?? DEMO_INPUT)}"
+                  </div>
                 </div>
 
-                <div className="space-y-2.5">
-                  {/* 분석된 핵심 요소 */}
-                  {(extractCost(decisionResult) !== 'Unknown' || extractRegion(decisionResult) !== 'Unknown' || extractKPIs(decisionResult).length > 0) && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-xl px-3.5 py-2.5">
-                      <div className="flex items-start gap-2.5 mb-3">
-                        <Database className="w-3.5 h-3.5 text-blue-600 mt-0.5 flex-shrink-0" />
-                        <div className="text-xs text-blue-700 font-semibold">
-                          분석된 핵심 요소
-                        </div>
-                      </div>
-                      <div className="space-y-1.5 text-xs ml-6">
-                        {extractCost(decisionResult) !== 'Unknown' && (
-                          <div className="text-gray-900">
-                            <span className="font-semibold">비용:</span> {extractCost(decisionResult)}
-                          </div>
-                        )}
-                        {extractRegion(decisionResult) !== 'Unknown' && (
-                          <div className="text-gray-900">
-                            <span className="font-semibold">영향 지역:</span> {extractRegion(decisionResult)}
-                          </div>
-                        )}
-                        {extractKPIs(decisionResult).filter(k => k.metric).map((kpi, idx) => (
-                          <div key={idx} className="text-gray-900">
-                            <span className="font-semibold">KPI:</span> {kpi.metric}{kpi.target ? ` ${kpi.target}` : ''}
-                          </div>
-                        ))}
+                {/* Decision Source */}
+                <div>
+                  <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
+                    {t('console.left.source')}
+                  </div>
+                  <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-3">
+                    <div className="w-7 h-7 rounded-lg bg-gray-900 flex items-center justify-center flex-shrink-0">
+                      <Bot className="w-3.5 h-3.5 text-white" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-gray-900">{t('console.left.sourceAgent')}</div>
+                      <div className="text-[10px] text-gray-400 mt-0.5">
+                        {lang === 'en'
+                          ? (decisionResult?.agent_name_en ?? decisionResult?.agent_name ?? flowState?.agentNameEn ?? flowState?.agentName ?? '—')
+                          : (decisionResult?.agent_name ?? flowState?.agentName ?? '—')}
                       </div>
                     </div>
-                  )}
+                  </div>
+                </div>
 
-                  {/* 전략 영향 */}
-                  {(() => {
-                    const strategicGoals = extractStrategicGoals(decisionResult);
-                    const graphNodes = decisionResult?.graph_payload?.nodes || [];
-                    const graphEdges = decisionResult?.graph_payload?.edges || [];
-                    const supportsEdges = graphEdges.filter((e: any) => e.relation === 'SUPPORTS' || e.predicate === 'SUPPORTS');
-                    const conflictsEdges = graphEdges.filter((e: any) => e.relation === 'CONFLICTS_WITH' || e.predicate === 'CONFLICTS_WITH');
+                {/* Extracted Decision Entities */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                      {t('console.left.entities')}
+                    </div>
+                    {showExtractedData && (
+                      <span className="text-[10px] text-green-600 font-semibold flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                        {t('console.left.done')}
+                      </span>
+                    )}
+                  </div>
 
-                    if (strategicGoals.length > 0 || supportsEdges.length > 0 || conflictsEdges.length > 0) {
-                      return (
-                        <div className="bg-cyan-50 border border-cyan-200 rounded-xl px-3.5 py-2.5">
-                          <div className="flex items-start gap-2.5 mb-3">
-                            <Target className="w-3.5 h-3.5 text-cyan-600 mt-0.5 flex-shrink-0" />
-                            <div className="text-xs text-cyan-700 font-semibold">
-                              전략 영향
-                            </div>
+                  {showExtractedData ? (() => {
+                    const entities = decisionResult?.decision_context?.entities ?? [];
+                    return (
+                      <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100 animate-in fade-in duration-500">
+                        {entities.length > 0 ? entities.map((entity) => (
+                          <div key={entity.key} className="px-3.5 py-2.5">
+                            <div className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">{entity.label}</div>
+                            <div className="text-xs font-semibold text-gray-900 mt-0.5">{entity.value}</div>
                           </div>
-                          <div className="space-y-1.5 text-xs ml-6">
-                            {strategicGoals.map((goal, idx) => {
-                              const isConflict = goal.status === 'conflict';
-                              return (
-                                <div key={idx} className="text-gray-900">
-                                  {goal.goal_id} {goal.name} —{' '}
-                                  <span className={`font-semibold ${isConflict ? 'text-amber-600' : 'text-green-600'}`}>
-                                    {isConflict ? '충돌' : '부합'}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                            {strategicGoals.length === 0 && supportsEdges.map((edge: any, idx: number) => {
-                              const targetNode = graphNodes.find((n: any) => n.id === edge.target);
-                              if (targetNode) {
-                                return (
-                                  <div key={idx} className="text-gray-900">
-                                    {targetNode.label} — <span className="font-semibold text-green-600">부합</span>
-                                  </div>
-                                );
-                              }
-                              return null;
-                            })}
-                            {strategicGoals.length === 0 && conflictsEdges.map((edge: any, idx: number) => {
-                              const targetNode = graphNodes.find((n: any) => n.id === edge.target);
-                              if (targetNode) {
-                                return (
-                                  <div key={idx} className="text-gray-900">
-                                    {targetNode.label} — <span className="font-semibold text-amber-600">충돌</span>
-                                  </div>
-                                );
-                              }
-                              return null;
-                            })}
+                        )) : (
+                          <div className="px-3.5 py-3 text-xs text-gray-400 italic">
+                            {lang === 'en' ? 'No structured entities extracted' : '추출된 항목 없음'}
                           </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-
-                  {/* 재무 영향 */}
-                  {(() => {
-                    const graphEdges = decisionResult?.graph_payload?.edges || [];
-                    const graphNodes = decisionResult?.graph_payload?.nodes || [];
-                    const exceedsEdges = graphEdges.filter((e: any) => e.relation === 'EXCEEDS_THRESHOLD' || e.predicate === 'EXCEEDS_THRESHOLD');
-                    const approvers = graphNodes.filter((n: any) => n.type === 'ACTOR' || n.type === 'Approver' || n.type === 'APPROVER');
-                    const owners = extractOwners(decisionResult);
-                    const budgetImpact = decisionResult?.governance_decision?.budget_impact;
-
-                    if (budgetImpact || owners.length > 0 || exceedsEdges.length > 0 || approvers.length > 0) {
-                      return (
-                        <div className="bg-green-50 border border-green-200 rounded-xl px-3.5 py-2.5">
-                          <div className="flex items-start gap-2.5 mb-3">
-                            <DollarSign className="w-3.5 h-3.5 text-green-600 mt-0.5 flex-shrink-0" />
-                            <div className="text-xs text-green-700 font-semibold">
-                              재무 영향
-                            </div>
-                          </div>
-                          <div className="space-y-1.5 text-xs ml-6">
-                            {budgetImpact && (
-                              <div className="text-gray-900">{budgetImpact}</div>
-                            )}
-                            {!budgetImpact && exceedsEdges.length > 0 && exceedsEdges.map((edge: any, idx: number) => {
-                              const props = edge.properties;
-                              if (props && props.observed && props.threshold) {
-                                const ratio = Math.floor(props.observed / props.threshold);
-                                return (
-                                  <div key={idx} className="text-gray-900">
-                                    잔여 예산 대비 <span className="font-semibold text-red-600">{ratio}배 초과</span>
-                                  </div>
-                                );
-                              }
-                              return null;
-                            })}
-                            {owners.filter(o => o.name || o.role).map((owner, idx) => (
-                              <div key={idx} className="text-gray-900">
-                                <span className="font-semibold">{owner.role ?? owner.name}</span> 승인 필요
-                              </div>
-                            ))}
-                            {owners.length === 0 && approvers.map((approver: any, idx: number) => (
-                              <div key={idx} className="text-gray-900">
-                                <span className="font-semibold">{approver.label}</span> 승인 필요
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-
-                  {/* 리스크 수준 */}
-                  {(() => {
-                    const flags = decisionResult?.governance?.flags || [];
-                    if (flags.length > 0) {
-                      const flagsByCategory: Record<string, any[]> = {};
-                      flags.forEach((flag: any) => {
-                        const category = flag.category || 'other';
-                        if (!flagsByCategory[category]) flagsByCategory[category] = [];
-                        flagsByCategory[category].push(flag);
-                      });
-
-                      const categoryNames: Record<string, string> = {
-                        'financial': '재무 위험',
-                        'strategic': '전략 위험',
-                        'compliance': '컴플라이언스 위험',
-                        'operational': '운영 위험',
-                        'governance': '정책 위험',
-                      };
-
-                      // Compute per-category severity (mapped categories only)
-                      const severityRank: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
-                      const mappedCategorySeverities = Object.entries(flagsByCategory)
-                        .filter(([cat]) => categoryNames[cat])
-                        .map(([, catFlags]) => {
-                          const s = catFlags.map((f: any) => f.severity?.toLowerCase()).filter(Boolean);
-                          if (s.includes('critical')) return 'critical';
-                          if (s.includes('high')) return 'high';
-                          if (s.includes('medium')) return 'medium';
-                          return 'low';
-                        });
-
-                      let overallRisk: string;
-                      if (mappedCategorySeverities.length === 0) {
-                        overallRisk = 'LOW';
-                      } else {
-                        const hasHighOrAbove = mappedCategorySeverities.some(s => severityRank[s] >= 2); // high or critical
-                        const hasLowOrMedium = mappedCategorySeverities.some(s => severityRank[s] <= 1); // low or medium
-                        if (hasHighOrAbove && !hasLowOrMedium) {
-                          // 모두 높음/매우높음 → 매우 높음
-                          overallRisk = 'CRITICAL';
-                        } else if (hasHighOrAbove && hasLowOrMedium) {
-                          // 높음/매우높음과 낮음/중간 혼재 → 높음
-                          overallRisk = 'HIGH';
-                        } else {
-                          // 모두 중간/낮음 → 낮음
-                          overallRisk = 'LOW';
-                        }
-                      }
-                      const overallRiskKorean = overallRisk === 'CRITICAL' ? '매우 높음' : overallRisk === 'HIGH' ? '높음' : overallRisk === 'MEDIUM' ? '중간' : '낮음';
-
-                      return (
-                        <div className="bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5">
-                          <div className="flex items-start gap-2.5 mb-3">
-                            <FileText className="w-3.5 h-3.5 text-red-600 mt-0.5 flex-shrink-0" />
-                            <div className="text-xs text-red-700 font-semibold">
-                              리스크 수준
-                            </div>
-                          </div>
-                          <div className="space-y-1.5 text-xs ml-6">
-                            {Object.entries(flagsByCategory).map(([category, categoryFlags]) => {
-                              const categoryName = categoryNames[category];
-                              if (!categoryName) return null;
-
-                              const categorySeverities = categoryFlags.map(f => f.severity?.toLowerCase()).filter(Boolean);
-                              const categoryHasCritical = categorySeverities.includes('critical');
-                              const categoryHasHigh = categorySeverities.includes('high');
-                              const categoryHasMedium = categorySeverities.includes('medium');
-                              const categorySeverity = categoryHasCritical ? 'CRITICAL' : categoryHasHigh ? 'HIGH' : categoryHasMedium ? 'MEDIUM' : 'LOW';
-                              const categorySeverityKorean = categorySeverity === 'CRITICAL' ? '매우 높음' : categorySeverity === 'HIGH' ? '높음' : categorySeverity === 'MEDIUM' ? '중간' : '낮음';
-                              const severityColor = categorySeverity === 'CRITICAL' ? 'text-red-600' : categorySeverity === 'HIGH' ? 'text-red-600' : categorySeverity === 'MEDIUM' ? 'text-amber-600' : 'text-green-600';
-
-                              // Remove duplicate messages
-                              const uniqueMessages = Array.from(new Set(categoryFlags.map((f: any) => f.message).filter(Boolean)));
-
-                              return (
-                                <div key={category} className="space-y-1">
-                                  <div className="text-gray-900">
-                                    <span className="font-semibold">{categoryName}:</span> <span className={`font-semibold ${severityColor}`}>{categorySeverityKorean}</span>
-                                  </div>
-                                  {uniqueMessages.map((message: string, idx: number) => (
-                                    <div key={idx} className="ml-2 text-gray-600 text-xs bg-white/60 rounded px-2 py-1">
-                                      {message}
-                                    </div>
-                                  ))}
-                                </div>
-                              );
-                            })}
-                            <div className="pt-2 mt-1 border-t border-red-300">
-                              <div className="text-gray-900">
-                                <span className="font-semibold">종합 위험도:</span> <span className={`font-semibold ${overallRisk === 'CRITICAL' ? 'text-red-600' : overallRisk === 'HIGH' ? 'text-red-600' : overallRisk === 'MEDIUM' ? 'text-amber-600' : 'text-green-600'}`}>
-                                  {overallRiskKorean}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-
-                  {!decisionResult && (
+                        )}
+                      </div>
+                    );
+                  })() : (
                     <p className="text-xs text-gray-400 italic">
-                      분석 완료 후 영향 요약이 표시됩니다...
+                      {t('console.left.pendingEntities')}
                     </p>
                   )}
                 </div>
-              </div>
-            )}
+
               </div>
             </div>
           </div>
@@ -1256,7 +1268,7 @@ export function GovernanceConsole() {
                         {analysisStep >= 1 ? "✓" : "1"}
                       </div>
                       <span className="text-xs font-semibold uppercase tracking-wide">
-                        정보 추출
+                        {t('console.step.extraction')}
                       </span>
                     </div>
                     <div className="text-gray-300">→</div>
@@ -1269,7 +1281,7 @@ export function GovernanceConsole() {
                         {analysisStep >= 2 ? "✓" : "2"}
                       </div>
                       <span className="text-xs font-semibold uppercase tracking-wide">
-                        정책 검토
+                        {t('console.step.policy')}
                       </span>
                     </div>
                     <div className="text-gray-300">→</div>
@@ -1282,7 +1294,7 @@ export function GovernanceConsole() {
                         {analysisStep >= 3 ? "✓" : "3"}
                       </div>
                       <span className="text-xs font-semibold uppercase tracking-wide">
-                        심층 분석
+                        {t('console.step.reasoning')}
                       </span>
                     </div>
                   </div>
@@ -1291,7 +1303,7 @@ export function GovernanceConsole() {
 
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-gray-900 uppercase tracking-wider">
-                  의사결정 지식 그래프
+                  {t('console.graph.title')}
                 </h2>
 
               </div>
@@ -1302,7 +1314,7 @@ export function GovernanceConsole() {
               className="flex-1 rounded-xl border border-gray-200 relative overflow-hidden bg-white shadow-sm"
             >
               <ReactFlowProvider>
-                <OntologyGraph data={decisionResult} />
+                <OntologyGraph data={decisionResult} lang={lang} />
               </ReactFlowProvider>
             </div>
 
@@ -1661,16 +1673,16 @@ export function GovernanceConsole() {
                         >
                           {/* Title */}
                           <div style={{ fontSize: '13px', fontWeight: 700, color: '#D97706', textAlign: 'center', borderBottom: '1px solid #FCD34D', paddingBottom: '6px' }}>
-                            심층 분석 결과 요약
+                            {lang === 'en' ? 'Deep Analysis Summary' : '심층 분석 결과 요약'}
                           </div>
 
                           {/* Conflicts */}
                           <div>
                             <div style={{ fontSize: '12px', fontWeight: 600, color: '#92400E', marginBottom: '4px' }}>
-                              전략적 충돌 감지
+                              {lang === 'en' ? 'Strategic Conflicts' : '전략적 충돌 감지'}
                             </div>
                             {reasoningData.conflicts.length === 0 ? (
-                              <div style={{ fontSize: '11px', color: '#92400E', opacity: 0.7 }}>충돌 미감지</div>
+                              <div style={{ fontSize: '11px', color: '#92400E', opacity: 0.7 }}>{lang === 'en' ? 'No conflicts detected' : '충돌 미감지'}</div>
                             ) : (
                               reasoningData.conflicts.slice(0, 2).map((c, i) => (
                                 <div key={i} style={{ fontSize: '11px', color: '#92400E', lineHeight: '1.5', marginBottom: '3px', wordBreak: 'keep-all', overflowWrap: 'break-word' }}>
@@ -1683,10 +1695,10 @@ export function GovernanceConsole() {
                           {/* Risk amplification */}
                           <div>
                             <div style={{ fontSize: '12px', fontWeight: 700, color: '#DC2626', marginBottom: '4px' }}>
-                              위험 증폭 요인
+                              {lang === 'en' ? 'Risk Amplifiers' : '위험 증폭 요인'}
                             </div>
                             {reasoningData.riskAmplification.length === 0 ? (
-                              <div style={{ fontSize: '11px', color: '#EF4444', opacity: 0.7 }}>위험 요소 없음</div>
+                              <div style={{ fontSize: '11px', color: '#EF4444', opacity: 0.7 }}>{lang === 'en' ? 'No risk factors' : '위험 요소 없음'}</div>
                             ) : (
                               reasoningData.riskAmplification.slice(0, 2).map((r, i) => (
                                 <div key={i} style={{ fontSize: '11px', color: '#EF4444', lineHeight: '1.5', marginBottom: '3px', wordBreak: 'keep-all', overflowWrap: 'break-word' }}>
@@ -1699,12 +1711,12 @@ export function GovernanceConsole() {
                           {/* Recommendations */}
                           <div>
                             <div style={{ fontSize: '12px', fontWeight: 700, color: '#059669', marginBottom: '4px' }}>
-                              권장 조치
+                              {lang === 'en' ? 'Recommendations' : '권장 조치'}
                             </div>
                             {(() => {
                               const recs = reasoningData.recommendations.filter(r => typeof r === 'string' && !r.includes('[object Object]'));
                               return recs.length === 0 ? (
-                                <div style={{ fontSize: '11px', color: '#047857', opacity: 0.7 }}>추가 검토 권장</div>
+                                <div style={{ fontSize: '11px', color: '#047857', opacity: 0.7 }}>{lang === 'en' ? 'Further review recommended' : '추가 검토 권장'}</div>
                               ) : (
                                 recs.slice(0, 3).map((rec, i) => (
                                   <div key={i} style={{ fontSize: '11px', color: '#047857', lineHeight: '1.5', marginBottom: '4px', wordBreak: 'keep-all', overflowWrap: 'break-word' }}>
@@ -1729,7 +1741,7 @@ export function GovernanceConsole() {
                   <AlertTriangle className="w-5 h-5 text-amber-600" />
                   <div>
                     <div className="text-sm font-bold text-amber-900 uppercase tracking-wide">
-                      전략 충돌 감지
+                      {t('console.conflict.title')}
                     </div>
                     <p className="text-xs text-amber-700 mt-1">
                       {reasoningData.conflicts.slice(0, 2).join('. ')}
@@ -1750,62 +1762,131 @@ export function GovernanceConsole() {
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm h-full flex flex-col overflow-hidden">
               <div className="p-6 space-y-6 overflow-y-auto flex-1">
             {/* Header */}
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900 uppercase tracking-wider">
-                검증 결과
-              </h2>
+            <h2 className="text-xl font-bold text-gray-900 uppercase tracking-wider">
+              {t('console.right.title')}
+            </h2>
+
+            {/* 1. Governance Verdict */}
+            {(() => {
+              const status = decisionResult?.governance?.status ?? null;
+              const allRules = decisionResult?.governance?.all_rules ?? [];
+              const firedRules = allRules.filter(r => {
+                const s = r.status?.toUpperCase();
+                return s === 'TRIGGERED' || s === 'VIOLATION';
+              });
+              const chain = (decisionResult?.governance?.approval_chain ?? []) as Record<string, unknown>[];
+              const firstRequired = chain.find(raw => raw?.status === 'required');
+              const primaryApprover = firstRequired
+                ? String(firstRequired.role ?? firstRequired.name ?? '')
+                : null;
+              const riskScore = decisionResult?.governance?.risk_score ?? 0;
+
+              if (!decisionResult) {
+                return (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                      {t('console.right.verdict.title')}
+                    </div>
+                    <p className="text-xs text-gray-400 italic">{t('console.right.verdict.pending')}</p>
+                  </div>
+                );
+              }
+
+              const isReview = status === 'review_required' || status === 'needs_review';
+              const isApproved = status === 'approved' || status === 'complete';
+              const verdictBg = isReview ? 'bg-amber-50' : isApproved ? 'bg-green-50' : 'bg-gray-50';
+              const verdictBorder = isReview ? 'border-amber-200' : isApproved ? 'border-green-200' : 'border-gray-200';
+              const statusText = isReview ? t('console.right.status.review') : isApproved ? t('console.right.status.approved') : (status ?? '').toUpperCase().replace(/_/g, ' ');
+              const statusColor = isReview ? 'text-amber-700' : isApproved ? 'text-green-700' : 'text-gray-700';
+              const aggregateBand = decisionResult?.risk_scoring?.aggregate?.band?.toUpperCase();
+              const bandKey = aggregateBand
+                ? `risk.band.${aggregateBand.toLowerCase()}`
+                : riskScore >= 7 ? 'risk.band.high' : riskScore >= 4 ? 'risk.band.medium' : 'risk.band.low';
+              const bandLabel = t(bandKey) !== bandKey ? t(bandKey) : (aggregateBand ?? 'LOW');
+              const riskBand = (aggregateBand === 'CRITICAL' || aggregateBand === 'HIGH' || riskScore >= 7)
+                ? { label: bandLabel, cls: aggregateBand === 'CRITICAL' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700' }
+                : (aggregateBand === 'MEDIUM' || riskScore >= 4)
+                ? { label: bandLabel, cls: 'bg-amber-100 text-amber-700' }
+                : { label: bandLabel, cls: 'bg-green-100 text-green-700' };
+
+              return (
+                <div className={`rounded-xl border p-4 space-y-3 animate-in fade-in duration-500 ${verdictBg} ${verdictBorder}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      {t('console.right.verdict.title')}
+                    </div>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${riskBand.cls}`}>
+                      {riskBand.label}
+                    </span>
+                  </div>
+                  <div className={`text-base font-bold ${statusColor}`}>
+                    {statusText || '—'}
+                  </div>
+                  {firedRules.length > 0 && (
+                    <div>
+                      <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1.5">
+                        {t('console.right.verdict.reasons')}
+                      </div>
+                      <ul className="space-y-1">
+                        {firedRules.slice(0, 3).map((rule, i) => (
+                          <li key={rule.rule_id ?? i} className="text-xs text-gray-700 flex items-start gap-1.5">
+                            <span className="text-gray-400 flex-shrink-0 mt-0.5">·</span>
+                            <span className="break-words">
+                              {lang === 'en'
+                                ? (rule.description_en ?? rule.name_en ?? rule.description ?? rule.name ?? rule.rule_id)
+                                : (rule.description ?? rule.name ?? rule.rule_id)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {primaryApprover && (
+                    <div>
+                      <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">
+                        {t('console.right.verdict.approver')}
+                      </div>
+                      <div className="text-xs font-semibold text-gray-900">{primaryApprover}</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* 2. Risk Analysis */}
+            <div className="space-y-2">
+              {decisionResult?.risk_scoring && (
+                <h3 className="text-sm font-semibold text-gray-900">
+                  {t('console.right.risk.section')}
+                </h3>
+              )}
+              <RiskScoringPanel
+                riskScoring={decisionResult?.risk_scoring}
+                governanceEvidence={decisionResult?.governance_evidence}
+                status={decisionResult?.status}
+              />
             </div>
 
-            {/* Engine Status Pills */}
-            <div className="flex gap-2.5">
-              <div
-                className={`flex-1 px-3.5 py-3 rounded-xl border text-center transition-all ${showExtractedData ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"}`}
-              >
-                <div className="text-xs text-gray-600 uppercase tracking-wide mb-1.5">
-                  규칙 기반 검토
-                </div>
-                <div
-                  className={`text-xs font-bold ${showExtractedData ? "text-green-600" : "text-gray-400"}`}
-                >
-                  {showExtractedData ? "ACTIVE" : "IDLE"}
-                </div>
-              </div>
-              <div
-                className={`flex-1 px-3.5 py-3 rounded-xl border text-center transition-all ${showReasoning ? "bg-amber-50 border-amber-200" : "bg-gray-50 border-gray-200"}`}
-              >
-                <div className="text-xs text-gray-600 uppercase tracking-wide mb-1.5">
-                  심층 추론
-                </div>
-                <div
-                  className={`text-xs font-bold ${showReasoning ? "text-amber-600" : "text-gray-400"}`}
-                >
-                  {showReasoning ? "ACTIVE" : "IDLE"}
-                </div>
-              </div>
-            </div>
+            {/* 3. External Signals */}
+            {decisionResult?.external_signals && (
+              <ExternalSignalsSection signals={decisionResult.external_signals} />
+            )}
 
-            {/* Governance Rules */}
+            {/* 4. Triggered Governance Rules */}
             {showRules && (
-              <div className="space-y-3.5 animate-in fade-in duration-500">
+              <div className="space-y-3 animate-in fade-in duration-500">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-900">
-                    Governance Rules
+                    {t('console.right.rules.title')}
                   </h3>
                   <span className="text-xs text-gray-400 font-mono">
-                    {decisionResult?.governance?.all_rules?.length ?? 0}개 항목
+                    {decisionResult?.governance?.all_rules?.length ?? 0}{t('console.right.rules.count')}
                   </span>
                 </div>
 
                 <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden">
                   {(() => {
                     const allRules = decisionResult?.governance?.all_rules ?? [];
-                    const RULE_STATUS_KR: Record<string, string> = {
-                      PASSED: '통과',
-                      TRIGGERED: '감지',
-                      VIOLATION: '위반',
-                      CHECKING: '확인 중',
-                      PENDING: '검토 대기',
-                    };
                     const firedRules = allRules.filter(r => {
                       const s = r.status?.toUpperCase();
                       return s === 'TRIGGERED' || s === 'VIOLATION';
@@ -1815,7 +1896,7 @@ export function GovernanceConsole() {
                     if (allRules.length === 0) {
                       return (
                         <div className="px-4 py-3.5 text-xs text-gray-400 italic">
-                          규칙 정보가 없습니다.
+                          {t('console.right.rules.empty')}
                         </div>
                       );
                     }
@@ -1823,33 +1904,16 @@ export function GovernanceConsole() {
                     return (
                       <>
                         {/* Fired rules — show full detail */}
-                        {firedRules.map((rule, idx) => {
-                          const status = rule.status?.toUpperCase() ?? 'UNKNOWN';
-                          const displayStatus = RULE_STATUS_KR[status] ?? status;
-                          const isViolation = status === 'VIOLATION';
-                          const statusColor = isViolation ? 'text-red-600' : 'text-amber-600';
-                          const borderColor = isViolation ? 'border-l-red-500' : 'border-l-amber-500';
-                          const bgColor = isViolation ? 'bg-red-50' : '';
-                          const descColor = isViolation ? 'text-red-600' : 'text-gray-600';
-                          return (
-                            <div key={rule.rule_id ?? idx}>
-                              {idx > 0 && <div className="h-px bg-gray-200"></div>}
-                              <div className={`px-4 py-3.5 hover:bg-white transition-colors border-l-3 ${borderColor} ${bgColor}`}>
-                                <div className="flex items-start justify-between mb-1.5 gap-2">
-                                  <span className="text-xs font-bold text-gray-900 break-words flex-1">
-                                    {rule.rule_id} {rule.name}
-                                  </span>
-                                  <span className={`text-xs font-bold uppercase tracking-wide ${statusColor} flex-shrink-0`}>
-                                    {displayStatus}
-                                  </span>
-                                </div>
-                                <p className={`text-xs ${descColor} break-words`}>
-                                  {rule.description ?? rule.why ?? '설명 없음'}
-                                </p>
-                              </div>
-                            </div>
-                          );
-                        })}
+                        {firedRules.map((rule, idx) => (
+                          <FiredRuleRow
+                            key={rule.rule_id ?? idx}
+                            rule={rule}
+                            idx={idx}
+                            isFirst={idx === 0}
+                            t={t}
+                            lang={lang}
+                          />
+                        ))}
 
                         {/* Passed rules — single summary row */}
                         {passedCount > 0 && (
@@ -1857,9 +1921,9 @@ export function GovernanceConsole() {
                             {firedRules.length > 0 && <div className="h-px bg-gray-200"></div>}
                             <div className="px-4 py-3 flex items-center justify-between">
                               <span className="text-xs text-gray-500">
-                                나머지 {passedCount}개 규칙
+                                {t('console.right.rules.remaining')}{passedCount}{t('console.right.rules.remainingSuffix')}
                               </span>
-                              <span className="text-xs font-bold text-green-600">통과</span>
+                              <span className="text-xs font-bold text-green-600">{t('console.right.rules.passed')}</span>
                             </div>
                           </>
                         )}
@@ -1870,67 +1934,12 @@ export function GovernanceConsole() {
               </div>
             )}
 
-            {/* Status Cards */}
-            <div className="grid grid-cols-3 gap-2.5">
-              <div className="bg-gray-50 border border-gray-200 rounded-xl p-3.5">
-                <div className="text-xs text-gray-600 uppercase tracking-wide mb-2">
-                  상태
-                </div>
-                {(() => {
-                  const status = decisionResult?.governance?.status ?? 'pending';
-                  const isReview = status === 'review_required' || status === 'needs_review';
-                  const isApproved = status === 'approved' || status === 'complete';
-                  const statusColor = isReview ? 'text-amber-600' : isApproved ? 'text-green-600' : 'text-gray-600';
-                  const dotColor = isReview ? 'bg-amber-500' : isApproved ? 'bg-green-500' : 'bg-gray-500';
-                  const displayStatus = isReview ? '검토 필요' : isApproved ? '승인 완료' : status.toUpperCase().replace(/_/g, ' ');
-                  return (
-                    <div className={`text-sm font-bold ${statusColor} flex items-center gap-1.5`}>
-                      <div className={`w-2 h-2 rounded-full ${dotColor}`}></div>
-                      {displayStatus}
-                    </div>
-                  );
-                })()}
-              </div>
-              <div className="bg-gray-50 border border-gray-200 rounded-xl p-3.5">
-                <div className="text-xs text-gray-600 uppercase tracking-wide mb-2">
-                  중요도
-                </div>
-                {(() => {
-                  const riskScore = decisionResult?.governance?.risk_score ?? 0;
-                  // Use risk_score as the authoritative source for importance level
-                  const riskLevel = riskScore >= 7 ? 'HIGH-RISK' : riskScore >= 4 ? 'MEDIUM' : 'LOW';
-                  const riskColor = riskLevel === 'HIGH-RISK' ? 'text-red-600' :
-                    riskLevel === 'MEDIUM' ? 'text-amber-600' : 'text-green-600';
-                  return (
-                    <div>
-                      <div className={`text-sm font-bold ${riskColor}`}>
-                        {riskLevel}
-                      </div>
-                      {decisionResult && (
-                        <div className="text-xs text-gray-400 font-mono mt-0.5">
-                          {riskScore}/10
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-              <div className="bg-gray-50 border border-gray-200 rounded-xl p-3.5">
-                <div className="text-xs text-gray-600 uppercase tracking-wide mb-2">
-                  영향 범위
-                </div>
-                <div className="text-sm font-bold text-gray-900">
-                  {extractRegion(decisionResult) !== 'Unknown' ? extractRegion(decisionResult) : '전체'}
-                </div>
-              </div>
-            </div>
-
-            {/* Approval Chain with Why */}
+            {/* 5. Approval Chain */}
             {showRules && (
-              <div className="space-y-3.5">
+              <div className="space-y-3 animate-in fade-in duration-500">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-900">
-                    승인 체계
+                    {t('console.right.approval.title')}
                   </h3>
                   <span className="text-xs text-gray-400 font-mono">
                     {decisionResult?.governance?.requires_human_review ? 'HIGH-ASSURANCE' : 'STANDARD'}
@@ -1944,70 +1953,75 @@ export function GovernanceConsole() {
                     if (chain.length === 0) {
                       return (
                         <div className="px-4 py-3.5 text-xs text-gray-400 italic">
-                          필요한 승인이 없습니다.
+                          {t('console.right.approval.empty')}
                         </div>
                       );
                     }
 
-                    return (
-                      <>
-                        {/* Header — 담당자 (name) | 직무 (role) | 상태 */}
-                        <div className="grid grid-cols-3 gap-4 px-4 py-2.5 bg-white border-b border-gray-200">
-                          <div className="text-xs text-gray-600 uppercase tracking-wide font-semibold">담당자</div>
-                          <div className="text-xs text-gray-600 uppercase tracking-wide font-semibold">직무</div>
-                          <div className="text-xs text-gray-600 uppercase tracking-wide font-semibold text-right">상태</div>
-                        </div>
-
-                        {/* Rows */}
-                        {chain.map((raw, idx) => {
-                          const obj = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : null;
-                          // person's name (e.g. "이수진") — falls back to ID if name not available
-                          const personName = obj?.name ? String(obj.name) : typeof raw === 'string' ? raw : '—';
-                          // job title (e.g. "준법감시인")
-                          const jobTitle = obj?.role ? String(obj.role) : '—';
-                          const rawStatus = obj?.status ? String(obj.status) : '';
-                          const statusLabel = rawStatus === 'required' ? '필요' : rawStatus === 'optional' ? '선택' : '검토 필요';
-                          const statusColor = rawStatus === 'required' ? 'text-red-600' : rawStatus === 'optional' ? 'text-gray-500' : 'text-amber-600';
-                          const reason = obj?.reason ? String(obj.reason) : '';
-                          const sourceRule = obj?.source_rule_id ? String(obj.source_rule_id) : '';
-                          const borderColor = rawStatus === 'required' ? 'border-l-red-500' : 'border-l-amber-500';
-
-                          return (
-                            <div
-                              key={idx}
-                              className={`px-4 py-3.5 border-l-3 ${borderColor} ${idx < chain.length - 1 ? 'border-b border-gray-200' : ''} hover:bg-white transition-colors`}
-                            >
-                              <div className="grid grid-cols-3 gap-4">
-                                <div className="text-xs text-gray-900 font-bold break-words">{personName}</div>
-                                <div className="text-xs text-gray-600 break-words">{jobTitle}</div>
-                                <div className={`text-xs font-bold text-right uppercase tracking-wide ${statusColor} break-words`}>
-                                  {statusLabel}
-                                </div>
-                              </div>
-                              {reason && (
-                                <div className="text-xs text-gray-500 mt-1.5 break-words">
-                                  {sourceRule ? `${sourceRule}: ` : ''}{reason}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </>
-                    );
+                    const approvalEvidence = decisionResult?.governance_evidence?.approvalEvidence ?? [];
+                    const allRules = decisionResult?.governance?.all_rules ?? [];
+                    return chain.map((raw, idx) => {
+                      const obj = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : null;
+                      const role = obj?.role ? String(obj.role) : null;
+                      const name = obj?.name ? String(obj.name) : null;
+                      const matches = (a: string, b: string) => {
+                        const al = a.toLowerCase(), bl = b.toLowerCase();
+                        return al === bl || al.includes(bl) || bl.includes(al);
+                      };
+                      const itemEvidence = approvalEvidence.filter((e) => {
+                        const titleKo = e.titleKo ?? '';
+                        const titleEn = e.titleEn ?? '';
+                        return (role && (matches(titleKo, role) || matches(titleEn, role)))
+                          || (name && (matches(titleKo, name) || matches(titleEn, name)));
+                      });
+                      return (
+                        <ApprovalChainRow
+                          key={idx}
+                          raw={raw}
+                          idx={idx}
+                          total={chain.length}
+                          t={t}
+                          lang={lang}
+                          evidence={itemEvidence}
+                          allRules={allRules}
+                        />
+                      );
+                    });
                   })()}
                 </div>
               </div>
             )}
 
-            {/* Analysis Progress */}
+            {/* 6. Analysis Engine Status */}
+            {showExtractedData && (
+              <div className="space-y-3">
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                  {t('console.right.engine.title')}
+                </h3>
+                <div className="flex gap-2.5">
+                  <div className={`flex-1 px-3.5 py-3 rounded-xl border text-center transition-all ${showExtractedData ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"}`}>
+                    <div className="text-xs text-gray-600 uppercase tracking-wide mb-1.5">
+                      {t('console.right.ruleEngine')}
+                    </div>
+                    <div className={`text-xs font-bold ${showExtractedData ? "text-green-600" : "text-gray-400"}`}>
+                      {showExtractedData ? "ACTIVE" : "IDLE"}
+                    </div>
+                  </div>
+                  <div className={`flex-1 px-3.5 py-3 rounded-xl border text-center transition-all ${showReasoning ? "bg-amber-50 border-amber-200" : "bg-gray-50 border-gray-200"}`}>
+                    <div className="text-xs text-gray-600 uppercase tracking-wide mb-1.5">
+                      {t('console.right.deepReasoning')}
+                    </div>
+                    <div className={`text-xs font-bold ${showReasoning ? "text-amber-600" : "text-gray-400"}`}>
+                      {showReasoning ? "ACTIVE" : "IDLE"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Analysis Progress Detail */}
             {showExtractedData && (
               <div className="space-y-3.5">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                    AI 엔진 분석 현황
-                  </h3>
-                </div>
-
                 {/* Unified Analysis Status */}
                 <div className="bg-gray-900 rounded-lg p-4 space-y-4">
                   {/* Progress Circle and Status */}
@@ -2047,14 +2061,14 @@ export function GovernanceConsole() {
                     {/* Status Text */}
                     <div className="flex-1">
                       <div className="text-xs font-semibold text-white mb-1">
-                        {analysisStep === 4 ? '분석 완료' : 'AI 엔진 병렬 분석 중...'}
+                        {analysisStep === 4 ? t('console.right.engine.complete') : t('console.right.engine.running')}
                       </div>
                       <div className="text-xs text-gray-300">
-                        {analysisStep === 0 && '분석 대기 중'}
-                        {analysisStep === 1 && '의사결정 정보 추출 중'}
-                        {analysisStep === 2 && '거버넌스 정책 검토 중'}
-                        {analysisStep === 3 && '전략 정합성 심층 분석 중'}
-                        {analysisStep === 4 && '의사결정 보고서(Decision Pack) 생성 완료'}
+                        {analysisStep === 0 && t('console.right.engine.idle')}
+                        {analysisStep === 1 && t('console.right.engine.step1')}
+                        {analysisStep === 2 && t('console.right.engine.step2')}
+                        {analysisStep === 3 && t('console.right.engine.step3')}
+                        {analysisStep === 4 && t('console.right.engine.step4')}
                       </div>
                     </div>
                   </div>
@@ -2062,11 +2076,11 @@ export function GovernanceConsole() {
                   {/* Analysis Steps */}
                   <div className="space-y-2.5 pt-2 border-t border-gray-700">
                     {[
-                      { step: 1, title: '의사결정 정보 추출', desc: '비정형 텍스트 내 목표, 비용, KPI 등 엔터티 추출', hasWarning: false },
-                      { step: 2, title: '온톨로지 관계 구조화', desc: '추출된 엔터티 간 의미적 관계를 온톨로지 기반으로 구조화', hasWarning: false },
+                      { step: 1, title: t('console.astep.1.title'), desc: t('console.astep.1.desc'), hasWarning: false },
+                      { step: 2, title: t('console.astep.2.title'), desc: t('console.astep.2.desc'), hasWarning: false },
                       {
                         step: 3,
-                        title: '거버넌스 정책 검토',
+                        title: t('console.astep.3.title'),
                         desc: (() => {
                           const triggeredRules = (decisionResult?.governance?.all_rules ?? []).filter(r => {
                             const s = r.status?.toUpperCase();
@@ -2074,9 +2088,12 @@ export function GovernanceConsole() {
                           });
                           if (triggeredRules.length > 0) {
                             const rule = triggeredRules[0];
-                            return `${rule.rule_id ?? ''} 감지: ${rule.description ?? rule.name ?? '규정 위반'}`.trim();
+                            const ruleDesc = lang === 'en'
+                              ? (rule.description_en ?? rule.name_en ?? rule.description ?? rule.name ?? t('report.gov.violation'))
+                              : (rule.description ?? rule.name ?? t('report.gov.violation'));
+                            return `${rule.rule_id ?? ''} ${t('report.gov.triggered')}: ${ruleDesc}`.trim();
                           }
-                          return '회사 정책 및 규정 준수 여부 검토';
+                          return t('console.astep.3.desc.default');
                         })(),
                         hasWarning: (() => {
                           const triggeredRules = (decisionResult?.governance?.all_rules ?? []).filter(r => {
@@ -2088,32 +2105,38 @@ export function GovernanceConsole() {
                       },
                       {
                         step: 4,
-                        title: '전략 정합성 분석',
+                        title: t('console.astep.4.title'),
                         desc: (() => {
                           const strategicGoals = extractStrategicGoals(decisionResult);
                           if (strategicGoals.length > 0) {
                             const goal = strategicGoals[0];
-                            return `${goal.name}와의 논리적 일치 여부 확인`;
+                            return lang === 'en'
+                              ? `Verifying logical alignment with ${goal.name}`
+                              : `${goal.name}와의 논리적 일치 여부 확인`;
                           }
                           const kpis = extractKPIs(decisionResult);
                           if (kpis.length > 0) {
-                            return `전사 KPI(${kpis[0].metric})와의 논리적 일치 여부 확인`;
+                            return lang === 'en'
+                              ? `Verifying alignment with corporate KPI (${kpis[0].metric})`
+                              : `전사 KPI(${kpis[0].metric})와의 논리적 일치 여부 확인`;
                           }
-                          return '전사 KPI(글로벌 확장)와의 논리적 일치 여부 확인';
+                          return t('console.astep.4.desc.default');
                         })(),
                         hasWarning: false
                       },
                       {
                         step: 5,
-                        title: '리스크 레벨 산정',
+                        title: t('console.astep.5.title'),
                         desc: (() => {
                           const riskScore = decisionResult?.governance?.risk_score ?? 0;
                           const riskLevel = riskScore >= 7 ? 'High-Risk' : riskScore >= 4 ? 'Medium-Risk' : 'Low-Risk';
-                          return `종합 위험도(${riskLevel}) 및 영향 범위 분석`;
+                          return lang === 'en'
+                            ? `Aggregate risk assessment (${riskLevel}) and impact scope analysis`
+                            : `종합 위험도(${riskLevel}) 및 영향 범위 분석`;
                         })(),
                         hasWarning: false
                       },
-                      { step: 6, title: '보고서 패키징', desc: '승인 체계 및 판단 근거를 포함한 Decision Pack 생성', hasWarning: false },
+                      { step: 6, title: t('console.astep.6.title'), desc: t('console.astep.6.desc'), hasWarning: false },
                     ].map((item) => {
                       // Steps 1-3 map directly to analysisStep 1-3
                       // Steps 4-6 complete at analysisStep 4
@@ -2161,13 +2184,13 @@ export function GovernanceConsole() {
 
                           {/* Status Label */}
                           {isComplete && !item.hasWarning && (
-                            <span className="text-xs font-semibold text-green-400 flex-shrink-0">완료</span>
+                            <span className="text-xs font-semibold text-green-400 flex-shrink-0">{t('console.astep.complete')}</span>
                           )}
                           {isComplete && item.hasWarning && (
-                            <span className="text-xs font-semibold text-amber-400 flex-shrink-0">주의</span>
+                            <span className="text-xs font-semibold text-amber-400 flex-shrink-0">{t('console.astep.warning')}</span>
                           )}
                           {isInProgress && (
-                            <span className="text-xs font-semibold text-purple-400 flex-shrink-0">병렬</span>
+                            <span className="text-xs font-semibold text-purple-400 flex-shrink-0">{t('console.astep.parallel')}</span>
                           )}
                         </div>
                       );
@@ -2178,14 +2201,14 @@ export function GovernanceConsole() {
             )}
 
             {/* Impact Simulation - KPI Forecast */}
-            {showReasoning && (
+            {false && showReasoning && (
               <div className="space-y-3.5 animate-in fade-in duration-700">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-900">
-                    임팩트 분석
+                    {t('console.impact.title')}
                   </h3>
                   <span className="text-xs text-purple-600 font-semibold uppercase tracking-wide">
-                    추론 기반
+                    {t('console.impact.reasoning')}
                   </span>
                 </div>
 
@@ -2203,7 +2226,7 @@ export function GovernanceConsole() {
                         <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 space-y-4">
                           <div>
                             <div className="flex items-center justify-between mb-3">
-                              <span className="text-xs text-gray-600 uppercase tracking-wide font-semibold">전략적 목표 영향</span>
+                              <span className="text-xs text-gray-600 uppercase tracking-wide font-semibold">{t('console.impact.strategicGoals')}</span>
                             </div>
                             <div className="space-y-3">
                               {strategicGoals.map((goal, idx) => {
@@ -2243,7 +2266,7 @@ export function GovernanceConsole() {
                             </div>
                           </div>
                         </div>
-                        <p className="text-xs text-gray-500 italic">전략적 목표 기반 임팩트 분석</p>
+                        <p className="text-xs text-gray-500 italic">{t('console.impact.footerStrategic')}</p>
                       </>
                     );
                   }
@@ -2262,13 +2285,13 @@ export function GovernanceConsole() {
                           {risks.length > 0 && (
                             <div>
                               <div className="flex items-center justify-between mb-1.5">
-                                <span className="text-xs text-gray-600 uppercase tracking-wide">위험 영향</span>
+                                <span className="text-xs text-gray-600 uppercase tracking-wide">{t('console.impact.riskImpact')}</span>
                                 <span className={`text-sm font-bold ${hasHighRisk ? 'text-red-600' : 'text-amber-600'}`}>
-                                  {hasHighRisk ? '높음' : '중간'}
+                                  {hasHighRisk ? t('console.impact.high') : t('console.impact.medium')}
                                 </span>
                               </div>
                               <p className="text-xs text-gray-700 leading-relaxed break-words">
-                                {risks[0].description ?? '위험 요소 감지됨'}
+                                {risks[0].description ?? t('console.impact.noRisk')}
                               </p>
                             </div>
                           )}
@@ -2276,11 +2299,11 @@ export function GovernanceConsole() {
                           {triggeredRules.length > 0 && (
                             <div>
                               <div className="flex items-center justify-between mb-1.5">
-                                <span className="text-xs text-gray-600 uppercase tracking-wide">정책 위반</span>
-                                <span className="text-sm font-bold text-red-600">{triggeredRules.length}건 감지</span>
+                                <span className="text-xs text-gray-600 uppercase tracking-wide">{t('console.impact.violations')}</span>
+                                <span className="text-sm font-bold text-red-600">{triggeredRules.length}{t('console.impact.detected')}</span>
                               </div>
                               <p className="text-xs text-gray-700 leading-relaxed break-words">
-                                {triggeredRules[0].description ?? triggeredRules[0].name ?? triggeredRules[0].rule_id ?? '규칙 위반 감지됨'}
+                                {triggeredRules[0].description ?? triggeredRules[0].name ?? triggeredRules[0].rule_id ?? t('console.impact.noRule')}
                               </p>
                             </div>
                           )}
@@ -2288,19 +2311,19 @@ export function GovernanceConsole() {
                           {(decisionResult.governance?.requires_human_review || (decisionResult.governance?.approval_chain ?? []).length > 0) && (
                             <div>
                               <div className="flex items-center justify-between mb-1.5">
-                                <span className="text-xs text-gray-600 uppercase tracking-wide">승인 필요</span>
-                                <span className="text-sm font-bold text-amber-600">검토 대기</span>
+                                <span className="text-xs text-gray-600 uppercase tracking-wide">{t('console.impact.approvalNeeded')}</span>
+                                <span className="text-sm font-bold text-amber-600">{t('console.impact.pendingReview')}</span>
                               </div>
                               <p className="text-xs text-gray-700 leading-relaxed">
-                                본 의사결정은 준법 검토 후 승인이 필요합니다.
+                                {t('console.impact.complianceNote')}
                               </p>
                             </div>
                           )}
                           {risks.length === 0 && triggeredRules.length === 0 && (
-                            <p className="text-xs text-gray-500 italic">KPI 분석 해당 없음 — 준법 검토 대상 의사결정</p>
+                            <p className="text-xs text-gray-500 italic">{t('console.impact.noKpi')}</p>
                           )}
                         </div>
-                        <p className="text-xs text-gray-500 italic">거버넌스 기반 임팩트 분석</p>
+                        <p className="text-xs text-gray-500 italic">{t('console.impact.footerGovernance')}</p>
                       </>
                     );
                   }
@@ -2322,7 +2345,7 @@ export function GovernanceConsole() {
                               <div className="w-1.5 bg-green-500 h-6 rounded-t"></div>
                               <div className="w-1.5 bg-green-500 h-7 rounded-t"></div>
                             </div>
-                            <p className="text-xs text-gray-500 mt-2">긍정적 영향 예상</p>
+                            <p className="text-xs text-gray-500 mt-2">{t('console.impact.positive')}</p>
                           </div>
                           <div>
                             <div className="flex items-center justify-between mb-2.5">
@@ -2336,10 +2359,10 @@ export function GovernanceConsole() {
                               <div className="w-1.5 bg-red-500 h-6 rounded-t"></div>
                               <div className="w-1.5 bg-red-500 h-7 rounded-t"></div>
                             </div>
-                            <p className="text-xs text-gray-500 mt-2">부정적 영향 (비용 상승)</p>
+                            <p className="text-xs text-gray-500 mt-2">{t('console.impact.negative')}</p>
                           </div>
                         </div>
-                        <p className="text-xs text-gray-500 italic">o1 추론 기반 시뮬레이션 (demo mode)</p>
+                        <p className="text-xs text-gray-500 italic">{t('console.impact.footerDemo')}</p>
                       </>
                     );
                   }
@@ -2378,12 +2401,12 @@ export function GovernanceConsole() {
                                 <div className={`w-1.5 ${barColor} h-6 rounded-t`}></div>
                                 <div className={`w-1.5 ${barColor} h-7 rounded-t`}></div>
                               </div>
-                              <p className="text-xs text-gray-500 mt-2">{impactLabel}</p>
+                              <p className="text-xs text-gray-500 mt-2">{isNegative ? t('console.impact.negative') : t('console.impact.positive')}</p>
                             </div>
                           );
                         })}
                       </div>
-                      <p className="text-xs text-gray-500 italic">추론 기반 시뮬레이션</p>
+                      <p className="text-xs text-gray-500 italic">{t('console.impact.footerSim')}</p>
                     </>
                   );
                 })()}
