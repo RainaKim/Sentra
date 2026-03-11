@@ -86,7 +86,7 @@ function mapStepToProgress(
  * @returns         A cleanup function — call it to abort the SSE stream early.
  */
 export function runDecisionFlow(
-  params: { companyId: string; decisionText: string },
+  params: { companyId: string; decisionText: string; token?: string; lang?: string; agentName?: string; agentNameEn?: string; department?: string; departmentEn?: string; workspaceDecisionId?: string },
   callbacks: RunDecisionCallbacks,
 ): () => void {
   const { onProgress, onComplete, onError } = callbacks;
@@ -110,7 +110,11 @@ export function runDecisionFlow(
       const created = await createDecision({
         company_id: params.companyId,
         input_text: params.decisionText,
-      });
+        lang: params.lang,
+        agent_name: params.agentName,
+        agent_name_en: params.agentNameEn,
+        workspace_decision_id: params.workspaceDecisionId,
+      }, params.token);
 
       if (cancelled) return;
       const decisionId = created.decision_id;
@@ -196,6 +200,8 @@ export function runDecisionFlow(
               );
             }
           },
+          params.token,
+          params.lang,
         );
       });
 
@@ -203,7 +209,7 @@ export function runDecisionFlow(
 
       // Step 3 — Fetch full result
       onProgress({ stage: "building_decision_pack", stepIndex: 4 });
-      const result = await getDecision(decisionId);
+      const result = await getDecision(decisionId, params.token, params.lang);
 
       if (cancelled) return;
 

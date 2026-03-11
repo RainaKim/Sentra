@@ -6,6 +6,7 @@ export interface NodeTypeStyle {
   borderColor: string;
   textColor: string;
   label: string;
+  label_en: string;
 }
 
 export const NODE_TYPE_STYLES: Record<string, NodeTypeStyle> = {
@@ -14,96 +15,112 @@ export const NODE_TYPE_STYLES: Record<string, NodeTypeStyle> = {
     borderColor: '#9CA3AF',
     textColor: '#374151',
     label: '담당자',
+    label_en: 'Actor',
   },
   GOAL: {
     color: '#F9FAFB',
     borderColor: '#9CA3AF',
     textColor: '#374151',
     label: '목표',
+    label_en: 'Goal',
   },
   DECISION: {
     color: '#F9FAFB',
     borderColor: '#6B7280',
     textColor: '#111827',
     label: '의사 결정',
+    label_en: 'Decision',
   },
   KPI: {
     color: '#F9FAFB',
     borderColor: '#9CA3AF',
     textColor: '#374151',
     label: '핵심지표',
+    label_en: 'KPI',
   },
   COST: {
     color: '#F9FAFB',
     borderColor: '#9CA3AF',
     textColor: '#374151',
     label: '비용',
+    label_en: 'Cost',
   },
   RISK: {
     color: '#FEF2F2',
     borderColor: '#EF4444',
     textColor: '#991B1B',
     label: '위험',
+    label_en: 'Risk',
   },
   GENERATES_RISK: {
     color: '#FEF2F2',
     borderColor: '#EF4444',
     textColor: '#991B1B',
     label: '위험감지',
+    label_en: 'Risk Signal',
   },
   POLICY: {
     color: '#F9FAFB',
     borderColor: '#9CA3AF',
     textColor: '#374151',
     label: '정책',
+    label_en: 'Policy',
   },
   RESOURCE: {
     color: '#F9FAFB',
     borderColor: '#9CA3AF',
     textColor: '#374151',
     label: '지역',
+    label_en: 'Region',
   },
   ENTITY: {
     color: '#FFFFFF',
     borderColor: '#D1D5DB',
     textColor: '#6B7280',
     label: '',
+    label_en: '',
   },
   STRATEGIC_GOAL: {
     color: '#F9FAFB',
     borderColor: '#9CA3AF',
     textColor: '#374151',
     label: '전략 목표',
+    label_en: 'Strategic Goal',
   },
   APPROVER: {
     color: '#F9FAFB',
     borderColor: '#9CA3AF',
     textColor: '#374151',
     label: '승인자',
+    label_en: 'Approver',
   },
   REGION: {
     color: '#F9FAFB',
     borderColor: '#9CA3AF',
     textColor: '#374151',
     label: '지역',
+    label_en: 'Region',
   },
   RULE: {
     color: '#F9FAFB',
     borderColor: '#9CA3AF',
     textColor: '#374151',
     label: '규정',
+    label_en: 'Rule',
   },
   GOAL_STRATEGIC: {
     color: '#F9FAFB',
     borderColor: '#9CA3AF',
     textColor: '#374151',
     label: '전략 목표',
+    label_en: 'Strategic Goal',
   },
   DATA_USAGE: {
     color: '#EFF6FF',
     borderColor: '#3B82F6',
     textColor: '#1D4ED8',
     label: '데이터 사용',
+    label_en: 'Data Usage',
   },
 };
 
