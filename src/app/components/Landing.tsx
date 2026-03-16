@@ -1,15 +1,19 @@
-import { useEffect } from 'react';
-import { useNavigate } from 'react-router';
-import { Navigation } from './Navigation';
-import { Hero } from './Hero';
-import { TrustIndicators } from './TrustIndicators';
-import { ValueSection } from './ValueSection';
-import { ProductDeepDive } from './ProductDeepDive';
-import { HowItWorks } from './HowItWorks';
-import { CTABanner } from './CTABanner';
-import { Footer } from './Footer';
-import { useAuth } from '../contexts/AuthContext';
-import { getMe } from '../../api/client';
+import { useEffect } from "react";
+import { useNavigate } from "react-router";
+import { Navigation } from "./Navigation";
+import { Hero } from "./Hero";
+import { ProblemSection } from "./landing/ProblemSection";
+import { GovernancePipeline } from "./landing/GovernancePipeline";
+import { ConsoleDeepDive } from "./landing/ConsoleDeepDive";
+import { OntologySection } from "./landing/OntologySection";
+import { DifferentiatorsSection } from "./landing/DifferentiatorsSection";
+import { ProductModules } from "./landing/ProductModules";
+import { WorkflowSection } from "./landing/WorkflowSection";
+import { IndustriesSection } from "./landing/IndustriesSection";
+import { CTABanner } from "./CTABanner";
+import { Footer } from "./Footer";
+import { useAuth } from "../contexts/AuthContext";
+import { getMe } from "../../api/client";
 
 export function Landing() {
   const { setAuth } = useAuth();
@@ -17,32 +21,40 @@ export function Landing() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
+    const token = params.get("token");
     if (!token) return;
 
-    // Remove token from URL immediately to avoid leaking it in history
     const cleanUrl = window.location.pathname;
-    window.history.replaceState({}, '', cleanUrl);
+    window.history.replaceState({}, "", cleanUrl);
 
     getMe(token)
       .then((user) => {
         setAuth(user, token);
         if (!user.name || !user.company_id) {
-          navigate('/profile?edit=true');
+          navigate("/profile?edit=true");
         }
       })
-      .catch((err) => console.error('[Landing] Failed to verify token:', err));
+      .catch((err) =>
+        console.error("[Landing] Failed to verify token:", err)
+      );
   }, []);
 
   return (
-    <div className="min-h-screen bg-white" style={{ fontFamily: 'SUIT Variable, Inter, sans-serif' }}>
+    <div
+      className="min-h-screen bg-white"
+      style={{ fontFamily: "SUIT Variable, Inter, sans-serif" }}
+    >
       <Navigation />
       <main>
         <Hero />
-        <TrustIndicators />
-        <ValueSection />
-        <ProductDeepDive />
-        <HowItWorks />
+        <ProblemSection />
+        <GovernancePipeline />
+        <ConsoleDeepDive />
+        <OntologySection />
+        <DifferentiatorsSection />
+        <ProductModules />
+        <WorkflowSection />
+        <IndustriesSection />
         <CTABanner />
       </main>
       <Footer />

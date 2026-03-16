@@ -20,6 +20,13 @@ import type {
   UserResponse,
   WorkspaceMetrics,
   WorkspaceDecisionsResponse,
+  ReasoningTraceResponse,
+  SimulationResponse,
+  RiskHistoryResponse,
+  EvidenceResponse,
+  AgentsResponse,
+  AgentItem,
+  EscalationRulesResponse,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -330,6 +337,34 @@ export async function getWorkspaceDecisions(
   );
 }
 
+/** GET /v1/workspace/agents — returns agents for the authenticated user's company */
+export async function getWorkspaceAgents(
+  token: string,
+  params?: { status?: string },
+): Promise<AgentsResponse> {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  const qs = query.toString();
+  return apiFetch<AgentsResponse>(
+    `/v1/workspace/agents${qs ? `?${qs}` : ""}`,
+    {},
+    token,
+  );
+}
+
+/** PUT /v1/workspace/agents/:id — update agent boundary config */
+export async function updateWorkspaceAgent(
+  token: string,
+  agentId: string,
+  body: { autonomy: string; risk_threshold: number; financial_limit: number },
+): Promise<AgentItem> {
+  return apiFetch<AgentItem>(
+    `/v1/workspace/agents/${encodeURIComponent(agentId)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+    token,
+  );
+}
+
 /** GET /v1/fixtures?company_id={companyId} — returns demo fixtures for a company */
 export async function getFixtures(companyId: string): Promise<DemoFixture[]> {
   const data = await apiFetch<unknown>(
@@ -340,6 +375,135 @@ export async function getFixtures(companyId: string): Promise<DemoFixture[]> {
     return [];
   }
   return data as DemoFixture[];
+}
+
+// ---------------------------------------------------------------------------
+// Reasoning Timeline
+// ---------------------------------------------------------------------------
+
+/** GET /v1/decisions/{id}/reasoning-trace */
+export async function getReasoningTrace(
+  decisionId: string,
+  token?: string,
+): Promise<ReasoningTraceResponse> {
+  return apiFetch<ReasoningTraceResponse>(
+    `/v1/decisions/${decisionId}/reasoning-trace`,
+    {},
+    token,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Simulation Lab
+// ---------------------------------------------------------------------------
+
+/** POST /v1/decisions/{id}/simulate */
+export async function runSimulation(
+  decisionId: string,
+  token?: string,
+): Promise<SimulationResponse> {
+  return apiFetch<SimulationResponse>(
+    `/v1/decisions/${decisionId}/simulate`,
+    { method: "POST", body: JSON.stringify({}) },
+    token,
+  );
+}
+
+/** GET /v1/decisions/{id}/risk-history */
+export async function getRiskHistory(
+  decisionId: string,
+  months?: number,
+  token?: string,
+): Promise<RiskHistoryResponse> {
+  const qs = months ? `?months=${months}` : "";
+  return apiFetch<RiskHistoryResponse>(
+    `/v1/decisions/${decisionId}/risk-history${qs}`,
+    {},
+    token,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Evidence Explorer
+// ---------------------------------------------------------------------------
+
+/** GET /v1/decisions/{id}/evidence */
+export async function getEvidence(
+  decisionId: string,
+  params?: { type?: string; status?: string; relevance?: string; q?: string },
+  token?: string,
+): Promise<EvidenceResponse> {
+  const query = new URLSearchParams();
+  if (params?.type) query.set("type", params.type);
+  if (params?.status) query.set("status", params.status);
+  if (params?.relevance) query.set("relevance", params.relevance);
+  if (params?.q) query.set("q", params.q);
+  const qs = query.toString();
+  return apiFetch<EvidenceResponse>(
+    `/v1/decisions/${decisionId}/evidence${qs ? `?${qs}` : ""}`,
+    {},
+    token,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Agent Boundaries
+// ---------------------------------------------------------------------------
+
+/** GET /v1/agents */
+export async function getAgents(
+  params?: { status?: string; department?: string },
+  token?: string,
+): Promise<AgentsResponse> {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  if (params?.department) query.set("department", params.department);
+  const qs = query.toString();
+  return apiFetch<AgentsResponse>(
+    `/v1/agents${qs ? `?${qs}` : ""}`,
+    {},
+    token,
+  );
+}
+
+/** GET /v1/agents/{id} */
+export async function getAgent(
+  agentId: string,
+  token?: string,
+): Promise<AgentItem> {
+  return apiFetch<AgentItem>(`/v1/agents/${agentId}`, {}, token);
+}
+
+/** POST /v1/agents */
+export async function createAgent(
+  data: Omit<AgentItem, "id">,
+  token?: string,
+): Promise<AgentItem> {
+  return apiFetch<AgentItem>(
+    "/v1/agents",
+    { method: "POST", body: JSON.stringify(data) },
+    token,
+  );
+}
+
+/** PATCH /v1/agents/{id} */
+export async function updateAgent(
+  agentId: string,
+  data: Partial<AgentItem>,
+  token?: string,
+): Promise<AgentItem> {
+  return apiFetch<AgentItem>(
+    `/v1/agents/${agentId}`,
+    { method: "PATCH", body: JSON.stringify(data) },
+    token,
+  );
+}
+
+/** GET /v1/escalation-rules */
+export async function getEscalationRules(
+  token?: string,
+): Promise<EscalationRulesResponse> {
+  return apiFetch<EscalationRulesResponse>("/v1/escalation-rules", {}, token);
 }
 
 /** GET /v1/decisions/{id}/pdf — downloads the decision pack as PDF */

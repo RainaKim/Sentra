@@ -15,6 +15,7 @@ import { getWorkspaceMetrics, getWorkspaceDecisions, getCompanies } from "../../
 import type { WorkspaceMetrics, WorkspaceDecision } from "../../api/types";
 import { useAuth } from "../contexts/AuthContext";
 import { useLang } from "../contexts/LangContext";
+import { setWorkspaceDecisionsCache } from "../store/consoleCache";
 
 function statusBadge(status: WorkspaceDecision["status"], riskLevel: string, t: (k: string) => string) {
   // Not yet analyzed — always show "Awaiting"
@@ -169,7 +170,10 @@ export function WorkspaceDashboard() {
       .then(setMetrics)
       .catch(() => {/* silently fall back to null */});
     getWorkspaceDecisions(token, { limit: 20, sort: "created_at:desc" })
-      .then((res) => setDecisions(res.items))
+      .then((res) => {
+        setDecisions(res.items);
+        setWorkspaceDecisionsCache(res.items);
+      })
       .catch(() => {/* silently fall back to empty */});
   }, [token]);
 
@@ -206,23 +210,6 @@ export function WorkspaceDashboard() {
                     ? `${lang === "en" ? (company.name_en ?? company.name) : company.name} · ${t('workspace.connected')}`
                     : t('workspace.connected')}
                 </span>
-              </div>
-
-              {/* Language Toggle */}
-              <div className="flex items-center gap-1 text-xs font-semibold text-gray-500">
-                <button
-                  onClick={() => setLang("ko")}
-                  className={`px-2 py-1 rounded transition-colors ${lang === "ko" ? "text-gray-900 bg-gray-100" : "hover:text-gray-700"}`}
-                >
-                  KO
-                </button>
-                <span className="text-gray-300">|</span>
-                <button
-                  onClick={() => setLang("en")}
-                  className={`px-2 py-1 rounded transition-colors ${lang === "en" ? "text-gray-900 bg-gray-100" : "hover:text-gray-700"}`}
-                >
-                  EN
-                </button>
               </div>
 
               {/* User Avatar */}

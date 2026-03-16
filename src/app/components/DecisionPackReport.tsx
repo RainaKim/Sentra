@@ -1,6 +1,6 @@
 import {
   ArrowLeft,
-  Mail,
+  Download,
   ArrowRight,
   FileText,
   DollarSign,
@@ -125,7 +125,7 @@ function translateFlagCode(code: string | undefined, lang: string): string {
 
 function SectionLabel({ label }: { label: string }) {
   return (
-    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-5">
+    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
       {label}
     </div>
   );
@@ -316,9 +316,9 @@ function DecisionSummarySection({
     : (statement ?? packTitle ?? "의사결정 분석 보고서");
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 mb-6 shadow-sm overflow-hidden">
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       {/* Header Strip */}
-      <div className="bg-gray-50 px-8 py-3 border-b border-gray-200 flex items-center justify-between">
+      <div className="bg-gray-50 px-6 py-2.5 border-b border-gray-200 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-xs font-bold text-gray-900 uppercase tracking-wider">
             {t("report.header.reportType")}
@@ -333,17 +333,17 @@ function DecisionSummarySection({
       </div>
 
       {/* Body */}
-      <div className="p-8">
+      <div className="px-6 py-5">
         {/* Decision Proposal */}
-        <div className="mb-6">
-          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
+        <div className="mb-4">
+          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">
             {t("report.header.proposal")}
           </div>
-          <p className="text-xl font-bold text-gray-900 leading-snug break-words whitespace-pre-line">{proposalText}</p>
+          <p className="text-base font-bold text-gray-900 leading-snug break-words whitespace-pre-line">{proposalText}</p>
         </div>
 
         {/* 4-col info grid */}
-        <div className="grid grid-cols-4 gap-6 pt-6 border-t border-gray-200">
+        <div className="grid grid-cols-4 gap-4 pt-4 border-t border-gray-200">
           {/* Decision Source */}
           <div>
             <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-3">
@@ -448,7 +448,7 @@ function NextActionsAlert({
   if (actions.length === 0) return null;
 
   return (
-    <div className="bg-amber-50 border border-amber-200 rounded-lg px-6 py-4 mb-6 flex gap-4">
+    <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-3 flex gap-3 mt-3">
       <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
       <div>
         <div className="text-xs font-bold text-amber-800 uppercase tracking-wide mb-2">
@@ -531,12 +531,12 @@ function ReasoningFlowSection({
   ];
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-8 mb-6 shadow-sm">
+    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
       <SectionLabel label={isEn ? "Decision Reasoning Flow" : "의사결정 추론 흐름"} />
       <div className="flex items-stretch gap-2">
         {steps.map((step, i) => (
           <>
-            <div key={i} className={`flex-1 rounded-lg p-4 border-2 ${step.dark ? "bg-gray-900 border-gray-900" : "bg-gray-50 border-gray-200"}`}>
+            <div key={i} className={`flex-1 rounded-lg p-3 border ${step.dark ? "bg-gray-900 border-gray-900" : "bg-gray-50 border-gray-200"}`}>
               <div className="flex items-center gap-2 mb-2">
                 {step.icon}
                 <div className={`text-[10px] font-bold uppercase tracking-wide ${step.dark ? "text-gray-300" : "text-gray-600"}`}>
@@ -582,8 +582,8 @@ function RiskIntelSection({
   const aggColors = bandColor(aggregate.band);
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-8 mb-6 shadow-sm">
-      <div className="flex items-center justify-between mb-5">
+    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+      <div className="flex items-center justify-between mb-3">
         <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
           {t("report.section.riskIntel")}
         </div>
@@ -596,7 +596,7 @@ function RiskIntelSection({
         </div>
       </div>
 
-      <div className="space-y-5">
+      <div className="space-y-4">
         {dimensions.map((dim) => {
           const dimKey = `risk.dim.${dim.id}`;
           const dimLabel = t(dimKey) !== dimKey ? t(dimKey) : (isEn && dim.label_en ? dim.label_en : dim.label ?? dim.id);
@@ -687,7 +687,7 @@ function TriggeredRulesSection({
   const isEn = lang === "en";
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-8 mb-6 shadow-sm">
+    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
       <SectionLabel label={t("report.section.triggeredRules")} />
 
       {rules.length === 0 ? (
@@ -784,7 +784,7 @@ function ApprovalChainSection({
 
   if (approvers.length === 0 && !dp.governance?.requires_human_review) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-8 mb-6 shadow-sm">
+      <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
         <SectionLabel label={t("report.section.approvalChain")} />
         <div className="flex items-center gap-2 text-sm text-green-700">
           <Check className="w-4 h-4 text-green-500" />
@@ -795,7 +795,7 @@ function ApprovalChainSection({
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-8 mb-6 shadow-sm">
+    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
       <SectionLabel label={t("report.section.approvalChain")} />
 
       {/* Submitted-by row */}
@@ -821,7 +821,7 @@ function ApprovalChainSection({
             : t("report.approval.status.pending");
 
           return (
-            <div key={idx} className="flex items-start gap-4 p-4 rounded-lg bg-gray-50 border border-gray-200">
+            <div key={idx} className="flex items-start gap-3 p-3 rounded-lg bg-gray-50 border border-gray-200">
               {/* Step number */}
               <div className="flex-shrink-0 w-5 h-5 rounded-full bg-gray-300 flex items-center justify-center mt-0.5">
                 <span className="text-[10px] font-bold text-gray-600">{idx + 1}</span>
@@ -1017,20 +1017,28 @@ function EvidenceSummarySection({
   ].filter((g) => g.items.length > 0);
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-8 mb-6 shadow-sm">
+    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
       <SectionLabel label={t("report.section.evidenceSummary")} />
-      <div className="space-y-7">
-        {groups.map((g, i) => (
-          <div key={g.key} className={i > 0 ? "pt-6 border-t border-gray-100" : ""}>
-            <EvidenceGroup
-              icon={g.icon}
-              title={g.title}
-              items={g.items}
-              lang={lang}
-              sourcesLabel={sourcesLabel}
-            />
-          </div>
-        ))}
+      <div className="space-y-3">
+        {groups.map((g) => {
+          // Show top 2 bullets per group — compact
+          const bullets = g.items.slice(0, 2).map((e) => getBulletText(e, lang)).filter(Boolean);
+          if (bullets.length === 0) return null;
+          return (
+            <div key={g.key} className="flex items-start gap-3">
+              <div className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                {g.icon}
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">{g.title}</span>
+                {bullets.map((text, i) => (
+                  <p key={i} className="text-xs text-gray-700 leading-relaxed mt-0.5 line-clamp-1">{text}</p>
+                ))}
+              </div>
+              <span className="text-[10px] text-gray-300 flex-shrink-0 mt-0.5">{g.items.length}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1233,7 +1241,7 @@ function RiskResponseSimulationSection({
   const baseline = sim?.baseline;
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-8 mb-6 shadow-sm">
+    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
       <SectionLabel label={t("report.section.riskSimulation")} />
       <p className="text-xs text-gray-500 -mt-3 mb-6">{t("report.simulation.subtitle")}</p>
       <div className="space-y-4">
@@ -1317,7 +1325,7 @@ function KeyInsightsSection({
   if (insights.length === 0) return null;
 
   return (
-    <div className="bg-gray-50 rounded-lg border border-gray-300 p-8 mb-6">
+    <div className="bg-gray-50 rounded-xl border border-gray-200 p-5">
       <div className="flex items-start gap-4">
         <div className="w-10 h-10 bg-gray-800 rounded-lg flex items-center justify-center flex-shrink-0">
           <TrendingUp className="w-5 h-5 text-white" />
@@ -1354,32 +1362,17 @@ function ExternalContextSignalRow({
 }) {
   const isEn = lang === "en";
   const title = isEn ? (item.titleEn ?? item.titleKo) : item.titleKo;
-  const summary = isEn ? (item.summaryEn ?? item.summaryKo) : item.summaryKo;
-  const relevance = isEn
-    ? (item.decisionRelevanceEn ?? item.decisionRelevanceKo ?? null)
-    : (item.decisionRelevanceKo ?? null);
   const sourceLabel = item.source?.sourceLabel ?? null;
   const conf = item.confidence != null ? `${Math.round(item.confidence * 100)}%` : null;
 
   return (
-    <div className={isFirst ? "" : "mt-4 pt-4 border-t border-gray-100"}>
-      <div className="flex items-start justify-between gap-3 mb-1">
-        <p className="text-xs font-semibold text-gray-800 leading-snug">{title}</p>
-        {conf && <span className="flex-shrink-0 text-[10px] text-gray-400 font-medium">{conf}</span>}
-      </div>
-      {summary && <p className="text-[11px] text-gray-500 leading-relaxed">{summary}</p>}
-      {relevance && (
-        <p className="mt-1 text-[11px] text-blue-600 leading-relaxed">
-          <span className="mr-1 opacity-50">→</span>{relevance}
-        </p>
-      )}
+    <div className={`flex items-center gap-2 ${isFirst ? "" : "mt-1.5"}`}>
+      <span className="w-1 h-1 rounded-full bg-gray-300 flex-shrink-0" />
+      <p className="text-xs text-gray-700 line-clamp-1 flex-1">{title}</p>
       {sourceLabel && (
-        <div className="mt-2">
-          <span className="text-[10px] text-gray-500 bg-white border border-gray-200 rounded px-1.5 py-0.5 font-medium">
-            {sourceLabel}
-          </span>
-        </div>
+        <span className="text-[9px] text-gray-400 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5 flex-shrink-0">{sourceLabel}</span>
       )}
+      {conf && <span className="text-[10px] text-gray-400 flex-shrink-0">{conf}</span>}
     </div>
   );
 }
@@ -1395,27 +1388,20 @@ function ExternalContextGroup({
   lang: string;
   t: (k: string) => string;
 }) {
-  const [showAll, setShowAll] = useState(false);
   if (items.length === 0) return null;
-
-  const visible = showAll ? items : items.slice(0, MAX_CONTEXT_ITEMS);
-  const hiddenCount = items.length - MAX_CONTEXT_ITEMS;
 
   return (
     <div>
-      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">{title}</p>
+      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">{title}</p>
       <div>
-        {visible.map((item, idx) => (
+        {items.slice(0, 2).map((item, idx) => (
           <ExternalContextSignalRow key={item.id} item={item} isFirst={idx === 0} lang={lang} />
         ))}
       </div>
-      {!showAll && hiddenCount > 0 && (
-        <button
-          onClick={() => setShowAll(true)}
-          className="mt-3 text-[11px] text-gray-400 hover:text-blue-500 transition-colors"
-        >
-          {t("report.externalContext.more").replace("{n}", String(hiddenCount))}
-        </button>
+      {items.length > 2 && (
+        <span className="mt-1 inline-block text-[10px] text-gray-300">
+          +{items.length - 2} more
+        </span>
       )}
     </div>
   );
@@ -1442,11 +1428,11 @@ function ExternalContextSection({
   if (groups.length === 0) return null;
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-8 mb-6 shadow-sm">
+    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
       <SectionLabel label={t("report.section.externalContext")} />
-      <div className="space-y-7">
+      <div className="space-y-3">
         {groups.map((g, i) => (
-          <div key={g.key} className={i > 0 ? "pt-6 border-t border-gray-200" : ""}>
+          <div key={g.key} className={i > 0 ? "pt-3 border-t border-gray-100" : ""}>
             <ExternalContextGroup title={g.title} items={g.items} lang={lang} t={t} />
           </div>
         ))}
@@ -1483,7 +1469,7 @@ function AuditMetaSection({
   ];
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-8 mb-6 shadow-sm">
+    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
       <SectionLabel label={t("report.section.auditMeta")} />
       <dl className="grid grid-cols-3 gap-x-8 gap-y-4">
         {rows.map(({ label, value, mono }) => (
@@ -1515,44 +1501,67 @@ export function DecisionPackReport({ onBack, decisionData: dp, decisionTextEn }:
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Top Navigation */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-5xl mx-auto px-8 py-4 flex items-center justify-between">
+    <div className="min-h-screen" style={{ backgroundColor: '#F1F2F7', fontFamily: 'SUIT Variable, Inter, sans-serif' }}>
+      {/* Top Bar */}
+      <div className="h-12 bg-white border-b border-gray-200 flex items-center px-6 shadow-sm">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-900 transition-colors font-medium mr-4"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          {t("report.back")}
+        </button>
+        <div className="w-px h-5 bg-gray-200 mr-4" />
+        <div className="flex items-center gap-2.5">
+          <div className="flex gap-0.5">
+            <div className="w-1.5 h-5 bg-gradient-to-b from-gray-700 to-gray-800 rounded-sm"></div>
+            <div className="w-1.5 h-5 bg-gradient-to-b from-gray-800 to-gray-900 rounded-sm mt-0.5"></div>
+            <div className="w-1.5 h-5 bg-gradient-to-b from-gray-900 to-black rounded-sm"></div>
+          </div>
+          <a href="/" className="font-bold text-sm tracking-wider text-gray-900">DecisionGovernance AI</a>
+        </div>
+        <div className="ml-4 flex items-center gap-1 text-xs text-gray-400">
+          <span>Platform</span>
+          <span className="text-gray-300">›</span>
+          <span className="text-gray-700 font-medium">Decision Pack</span>
+        </div>
+        <div className="ml-auto">
           <button
-            onClick={onBack}
-            className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors font-medium"
+            disabled
+            className="px-3.5 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1.5 bg-gray-300 text-gray-500 cursor-not-allowed"
+            title="Coming soon"
           >
-            <ArrowLeft className="w-4 h-4" />
-            {t("report.back")}
-          </button>
-          <button
-            onClick={() => {}}
-            className="px-4 py-2 text-sm font-semibold rounded-xl flex items-center gap-2 bg-gray-900 text-white hover:bg-gray-800 transition-colors"
-          >
-            <Mail className="w-4 h-4" />
-            {t("report.email")}
+            <Download className="w-3.5 h-3.5" />
+            Download PDF
           </button>
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-8 py-10">
+      <div className="max-w-7xl mx-auto px-6 py-4 space-y-3">
         <DecisionSummarySection dp={dp} t={t} lang={lang} decisionTextEn={decisionTextEn} />
         <NextActionsAlert dp={dp} lang={lang} />
         <ReasoningFlowSection dp={dp} t={t} lang={lang} />
         <RiskIntelSection dp={dp} t={t} lang={lang} />
-        <TriggeredRulesSection rules={triggeredRules} dp={dp} t={t} lang={lang} />
-        <ApprovalChainSection dp={dp} t={t} lang={lang} />
-        <RiskResponseSimulationSection dp={dp} t={t} lang={lang} />
-        <EvidenceSummarySection dp={dp} t={t} lang={lang} />
-        <ExternalContextSection dp={dp} t={t} lang={lang} />
+
+        {/* Two-column: Triggered Rules + Approval Chain */}
+        <div className="grid grid-cols-2 gap-3">
+          <TriggeredRulesSection rules={triggeredRules} dp={dp} t={t} lang={lang} />
+          <ApprovalChainSection dp={dp} t={t} lang={lang} />
+        </div>
+
+        {/* Two-column: Evidence Highlights + External Signals */}
+        <div className="grid grid-cols-2 gap-3">
+          <EvidenceSummarySection dp={dp} t={t} lang={lang} />
+          <ExternalContextSection dp={dp} t={t} lang={lang} />
+        </div>
+
         <KeyInsightsSection dp={dp} t={t} lang={lang} />
         <AuditMetaSection dp={dp} t={t} lang={lang} />
 
-        <div className="text-center py-8 border-t border-gray-200">
-          <p className="text-xs text-gray-500 mb-1">{t("report.footer.1")}</p>
-          <p className="text-xs text-gray-500 mb-4">{t("report.footer.2")}</p>
-          <p className="text-xs text-gray-400 font-mono tracking-wider">CONFIDENTIAL · SENTRA</p>
+        <div className="text-center py-3">
+          <p className="text-[10px] text-gray-400 mb-0.5">{t("report.footer.1")}</p>
+          <p className="text-[10px] text-gray-400 mb-2">{t("report.footer.2")}</p>
+          <p className="text-[10px] text-gray-300 font-mono tracking-widest uppercase">Confidential · DecisionGovernance AI</p>
         </div>
       </div>
     </div>
@@ -1576,7 +1585,7 @@ function DemoDecisionPack({
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200">
-        <div className="max-w-5xl mx-auto px-8 py-4 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-8 py-4 flex items-center justify-between">
           <button
             onClick={onBack}
             className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors font-medium"
@@ -1585,23 +1594,25 @@ function DemoDecisionPack({
             {t("report.back")}
           </button>
           <button
+            disabled
             onMouseEnter={() => setShowTooltip(true)}
             onMouseLeave={() => setShowTooltip(false)}
-            className="relative px-4 py-2 bg-gray-900 text-white rounded text-sm font-semibold hover:bg-gray-800 transition-colors"
+            className="relative px-4 py-2 bg-gray-300 text-gray-500 rounded text-sm font-semibold cursor-not-allowed flex items-center gap-1.5"
           >
-            {t("report.email")}
+            <Download className="w-3.5 h-3.5" />
+            Download PDF
             {showTooltip && (
-              <span className="absolute top-full mt-2 right-0 w-56 px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg border border-gray-700 z-50">
-                {t("report.footer.1")}
+              <span className="absolute top-full mt-2 right-0 w-40 px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg border border-gray-700 z-50">
+                Coming soon
               </span>
             )}
           </button>
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-8 py-10">
-        <div className="bg-white rounded-lg border border-gray-200 mb-6 shadow-sm overflow-hidden">
-          <div className="bg-gray-50 px-8 py-3 border-b border-gray-200 flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-8 py-10">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="bg-gray-50 px-6 py-2.5 border-b border-gray-200 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="text-xs font-bold text-gray-900 uppercase tracking-wider">
                 {t("report.header.reportType")}

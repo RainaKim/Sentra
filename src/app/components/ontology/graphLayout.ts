@@ -11,15 +11,15 @@ export interface LayoutOptions {
 
 const defaultOptions: Required<LayoutOptions> = {
   direction: 'LR',
-  nodeWidth: 250,
-  nodeHeight: 250,
-  rankSep: 200,
-  nodeSep: 150,
+  nodeWidth: 190,
+  nodeHeight: 80,
+  rankSep: 120,
+  nodeSep: 40,
 };
 
 /**
- * Apply dagre layout to React Flow nodes
- * Returns positioned nodes with deterministic layout
+ * Apply dagre layout to React Flow nodes.
+ * Returns positioned nodes with deterministic layout.
  */
 export function getLayoutedElements(
   nodes: Node[],
@@ -36,12 +36,10 @@ export function getLayoutedElements(
     nodesep: opts.nodeSep,
   });
 
-  // Add nodes to dagre
   nodes.forEach((node) => {
-    // Decision nodes are larger
     const isDecision = node.data?.type === 'DECISION';
-    const nodeWidth = isDecision ? 320 : opts.nodeWidth;
-    const nodeHeight = isDecision ? 320 : opts.nodeHeight;
+    const nodeWidth = isDecision ? 240 : opts.nodeWidth;
+    const nodeHeight = isDecision ? 90 : opts.nodeHeight;
 
     dagreGraph.setNode(node.id, {
       width: nodeWidth,
@@ -49,20 +47,17 @@ export function getLayoutedElements(
     });
   });
 
-  // Add edges to dagre
   edges.forEach((edge) => {
     dagreGraph.setEdge(edge.source, edge.target);
   });
 
-  // Compute layout
   dagre.layout(dagreGraph);
 
-  // Apply positions to nodes
   const layoutedNodes = nodes.map((node) => {
     const nodeWithPosition = dagreGraph.node(node.id);
     const isDecision = node.data?.type === 'DECISION';
-    const nodeWidth = isDecision ? 320 : opts.nodeWidth;
-    const nodeHeight = isDecision ? 320 : opts.nodeHeight;
+    const nodeWidth = isDecision ? 240 : opts.nodeWidth;
+    const nodeHeight = isDecision ? 90 : opts.nodeHeight;
 
     return {
       ...node,

@@ -1,4 +1,4 @@
-# Sentra – Engineering Playbook
+# DecisionGovernance AI – Engineering Playbook
 
 Internal coding standards and reasoning workflow for all code generated in this project.
 These rules are non-negotiable. Every code change must satisfy every applicable section below.

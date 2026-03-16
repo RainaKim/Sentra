@@ -3,10 +3,8 @@ import ReactFlow, {
   Node,
   Edge,
   Controls,
-  Background,
   useNodesState,
   useEdgesState,
-  BackgroundVariant,
   NodeProps,
   useReactFlow,
   MarkerType,
@@ -24,6 +22,7 @@ import type {
 interface OntologyGraphProps {
   data: DecisionResponse | null;
   lang?: string;
+  conflicts?: string[];
 }
 
 // Predicate label mapping (Korean)
@@ -82,83 +81,112 @@ const CORE_PREDICATES = new Set([
   'CONFLICTS_WITH',
 ]);
 
-// Get predicate label
 function getPredicateLabel(predicate: string, lang?: string): string {
   if (lang === 'en') return PREDICATE_LABELS_EN[predicate] || predicate;
   return PREDICATE_LABELS[predicate] || predicate;
 }
 
-// Custom circular node component
-function CircleNode({ data, selected }: NodeProps) {
+// Rounded-rectangle card node
+function CardNode({ data, selected }: NodeProps) {
+  const [showTooltip, setShowTooltip] = useState(false);
   const style = getNodeStyle(data.type);
   const isHighlighted = data.highlighted ?? false;
   const isDimmed = data.dimmed ?? false;
   const isDecision = data.type === 'DECISION';
   const isConflict = data.isConflict ?? false;
+  const isRisk = data.type === 'RISK' || data.type === 'GENERATES_RISK';
+  const conflictTooltip = data.conflictTooltip as string | undefined;
 
-  const bgColor = isConflict ? '#FFFBEB' : style.color;
-  const borderColor = isConflict ? '#F59E0B' : style.borderColor;
-  const textColor = isConflict ? '#92400E' : style.textColor;
+  const width = isDecision ? 220 : 170;
+  const minHeight = isDecision ? 72 : 56;
 
-  // Decision nodes are larger
-  const nodeSize = isDecision ? 280 : 240;
-  const fontSize = isDecision ? 13 : 12;
-  const typeLabelSize = isDecision ? 10 : 9;
+  let bg = '#FFFFFF';
+  let border = '#E5E7EB';
+  let textColor = '#111827';
+  let typeColor = '#9CA3AF';
+  let shadow = '0 1px 3px rgba(0,0,0,0.06)';
+
+  if (isDecision) {
+    bg = '#111827';
+    border = '#111827';
+    textColor = '#FFFFFF';
+    typeColor = 'rgba(255,255,255,0.6)';
+    shadow = '0 4px 12px rgba(0,0,0,0.15)';
+  } else if (isRisk) {
+    bg = '#FEF2F2';
+    border = '#FCA5A5';
+    textColor = '#991B1B';
+    typeColor = '#DC2626';
+  } else if (isConflict) {
+    bg = '#FFFBEB';
+    border = '#FCD34D';
+    textColor = '#92400E';
+    typeColor = '#D97706';
+  } else if (data.type === 'DATA_USAGE') {
+    bg = '#EFF6FF';
+    border = '#93C5FD';
+    textColor = '#1E40AF';
+    typeColor = '#3B82F6';
+  }
+
+  if (selected || isHighlighted) {
+    shadow = '0 4px 16px rgba(0,0,0,0.12)';
+  }
+
+  const typeLabel = data.lang === 'en' ? (style.label_en || style.label) : style.label;
 
   return (
     <>
-      {/* Connection handles - invisible but functional */}
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
+      <Handle type="target" position={Position.Top} id="top" style={{ opacity: 0 }} />
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
-
+      <Handle type="source" position={Position.Bottom} id="bottom" style={{ opacity: 0 }} />
       <div
+        onMouseEnter={() => conflictTooltip && setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
         style={{
-          width: `${nodeSize}px`,
-          height: `${nodeSize}px`,
-          borderRadius: '50%',
-          backgroundColor: bgColor,
-          border: `${isDecision ? 4 : 3}px solid ${borderColor}`,
-          boxShadow: selected
-            ? '0 6px 16px rgba(0, 0, 0, 0.2)'
-            : isHighlighted
-            ? '0 6px 16px rgba(0, 0, 0, 0.15)'
-            : '0 3px 8px rgba(0, 0, 0, 0.1)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '36px',
+          width: `${width}px`,
+          minHeight: `${minHeight}px`,
+          borderRadius: '12px',
+          backgroundColor: bg,
+          border: `1.5px solid ${border}`,
+          boxShadow: shadow,
+          padding: isDecision ? '14px 18px' : '10px 14px',
           cursor: 'pointer',
           transition: 'all 0.2s ease',
-          opacity: isDimmed ? 0.3 : 1,
-          overflow: 'hidden',
+          opacity: isDimmed ? 0.25 : 1,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          gap: '4px',
+          position: 'relative',
+          animation: isConflict && !isDimmed ? 'conflictPulse 2s ease-in-out infinite' : undefined,
         }}
       >
         <div
           style={{
-            fontSize: `${typeLabelSize}px`,
-            fontWeight: 600,
-            color: textColor,
-            opacity: 0.7,
-            marginBottom: '8px',
+            fontSize: '9px',
+            fontWeight: 700,
+            color: typeColor,
             textTransform: 'uppercase',
-            letterSpacing: '0.5px',
+            letterSpacing: '0.8px',
           }}
         >
-          {data.lang === 'en' ? (style.label_en || style.label) : style.label}
+          {typeLabel}
+          {isConflict && (
+            <span style={{ marginLeft: '4px', fontSize: '9px' }}>⚠</span>
+          )}
         </div>
         <div
           style={{
-            fontSize: `${fontSize}px`,
-            fontWeight: 600,
+            fontSize: isDecision ? '13px' : '11px',
+            fontWeight: isDecision ? 700 : 600,
             color: textColor,
-            textAlign: 'center',
             lineHeight: '1.4',
             wordBreak: 'break-word',
             overflowWrap: 'break-word',
-            maxWidth: '100%',
             display: '-webkit-box',
-            WebkitLineClamp: 4,
+            WebkitLineClamp: isDecision ? 4 : 3,
             WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
           }}
@@ -166,23 +194,91 @@ function CircleNode({ data, selected }: NodeProps) {
         >
           {data.label}
         </div>
+        {/* Conflict insight card */}
+        {showTooltip && conflictTooltip && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '100%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              marginBottom: '12px',
+              backgroundColor: '#FFFFFF',
+              borderRadius: '14px',
+              border: '1px solid #F3E8C0',
+              maxWidth: '320px',
+              width: 'max-content',
+              boxShadow: '0 8px 30px rgba(0,0,0,0.12), 0 0 0 1px rgba(252,211,77,0.2)',
+              zIndex: 50,
+              pointerEvents: 'none',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Card header */}
+            <div style={{
+              padding: '10px 14px',
+              backgroundColor: '#FFFBEB',
+              borderBottom: '1px solid #FEF3C7',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '13px' }}>⚠️</span>
+                <span style={{
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  color: '#92400E',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                }}>
+                  {data.lang === 'en' ? 'Strategic Conflict Detected' : '전략 충돌 감지'}
+                </span>
+              </div>
+              <span style={{
+                fontSize: '9px',
+                fontWeight: 600,
+                color: '#92400E',
+                backgroundColor: '#FEF3C7',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                letterSpacing: '0.3px',
+              }}>
+                Nova Reasoner
+              </span>
+            </div>
+            {/* Card body */}
+            <div style={{ padding: '12px 14px' }}>
+              <p style={{
+                fontSize: '12px',
+                lineHeight: '1.6',
+                color: '#374151',
+                margin: 0,
+              }}>
+                {conflictTooltip}
+              </p>
+            </div>
+            {/* Arrow */}
+            <div style={{
+              position: 'absolute',
+              top: '100%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: 0,
+              height: 0,
+              borderLeft: '8px solid transparent',
+              borderRight: '8px solid transparent',
+              borderTop: '8px solid #FFFFFF',
+              filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.08))',
+            }} />
+          </div>
+        )}
       </div>
     </>
   );
 }
 
-const nodeTypes = {
-  circle: CircleNode,
-};
-
-// No custom edge types needed - using built-in smoothstep
-
-// Shorten label if too long
-function shortenLabel(label: string, maxLength = 24): string {
-  if (!label) return '';
-  if (label.length <= maxLength) return label;
-  return label.substring(0, maxLength - 1) + '…';
-}
+const nodeTypes = { card: CardNode };
 
 // Returns true if the string contains Korean characters
 function hasKorean(str: string | null | undefined): boolean {
@@ -199,46 +295,49 @@ function enSafe(str: string | null | undefined): string | null {
 // Clean label by removing type-specific prefixes
 function cleanLabel(label: string, nodeType: string): string {
   if (!label) return '';
-
-  // Remove "rule_XXX: " prefix from RULE nodes
-  if (nodeType === 'RULE') {
-    return label.replace(/^rule_\w+:\s*/i, '');
-  }
-
-  // Remove "K数字: " prefix from KPI nodes
-  if (nodeType === 'KPI') {
-    return label.replace(/^K\d+:\s*/i, '');
-  }
-
+  if (nodeType === 'RULE') return label.replace(/^rule_\w+:\s*/i, '');
+  if (nodeType === 'KPI') return label.replace(/^K\d+:\s*/i, '');
   return label;
 }
 
-export function OntologyGraph({ data, lang }: OntologyGraphProps) {
+// Inject keyframe animation for conflict pulse
+const CONFLICT_KEYFRAMES_ID = 'conflict-pulse-keyframes';
+function ensureConflictKeyframes() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById(CONFLICT_KEYFRAMES_ID)) return;
+  const style = document.createElement('style');
+  style.id = CONFLICT_KEYFRAMES_ID;
+  style.textContent = `
+    @keyframes conflictPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(252,211,77,0); }
+      50% { box-shadow: 0 0 0 4px rgba(252,211,77,0.35); }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+export function OntologyGraph({ data, lang, conflicts = [] }: OntologyGraphProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [coreEdgesOnly, setCoreEdgesOnly] = useState(false);
   const { fitView } = useReactFlow();
 
-  // Parse graph from graph_payload.nodes and graph_payload.edges ONLY
+  useEffect(() => { ensureConflictKeyframes(); }, []);
+
+  // Parse graph from graph_payload
   const { parsedNodes, parsedEdges } = useMemo(() => {
     const isEn = lang === 'en';
-    if (!data?.graph_payload) {
-      return { parsedNodes: [], parsedEdges: [] };
-    }
+    if (!data?.graph_payload) return { parsedNodes: [], parsedEdges: [] };
 
     const graphPayload = data.graph_payload;
-
-    // Check if nodes/edges are arrays (not numbers)
     if (!Array.isArray(graphPayload.nodes) || !Array.isArray(graphPayload.edges)) {
-      console.warn('[OntologyGraph] graph_payload.nodes or edges is not an array');
       return { parsedNodes: [], parsedEdges: [] };
     }
 
     const rfNodes: Node[] = [];
     const rfEdges: Edge[] = [];
 
-    // Convert backend nodes to React Flow nodes
     graphPayload.nodes.forEach((node: GraphPayloadNode) => {
       const normalizedType = normalizeNodeType(node.type);
       const rawLabel = isEn
@@ -247,7 +346,6 @@ export function OntologyGraph({ data, lang }: OntologyGraphProps) {
             enSafe(node.properties?.label_en as string) ||
             enSafe(node.properties?.name_en as string) ||
             enSafe(node.properties?.role_en as string) ||
-            // KPI fallback: target value (e.g. "20%", "$1M") is usually ASCII
             (normalizedType === 'KPI' ? enSafe(String(node.properties?.target ?? '')) || enSafe(node.properties?.metric as string) : null) ||
             node.label ||
             node.id
@@ -257,8 +355,8 @@ export function OntologyGraph({ data, lang }: OntologyGraphProps) {
 
       rfNodes.push({
         id: node.id,
-        type: 'circle',
-        position: { x: 0, y: 0 }, // Will be set by dagre layout
+        type: 'card',
+        position: { x: 0, y: 0 },
         data: {
           label: cleanedLabel,
           fullLabel: cleanedLabel,
@@ -271,78 +369,73 @@ export function OntologyGraph({ data, lang }: OntologyGraphProps) {
       });
     });
 
-    // Collect target node IDs of CONFLICTS_WITH edges
-    const conflictTargetIds = new Set<string>();
+    // Mark CONFLICTS_WITH — both source and target nodes
+    const conflictNodeIds = new Set<string>();
     graphPayload.edges.forEach((edge: any) => {
       const predicate = edge.predicate || edge.relation || '';
       if (predicate === 'CONFLICTS_WITH') {
+        const source = edge.source || edge.from;
         const target = edge.target || edge.to;
-        if (target) conflictTargetIds.add(target);
+        if (source) conflictNodeIds.add(source);
+        if (target) conflictNodeIds.add(target);
       }
     });
-
-    // Mark conflict target nodes
+    // Build a combined conflict tooltip from reasoning contradictions
+    const conflictTooltipText = conflicts.length > 0 ? conflicts.join(' · ') : undefined;
     rfNodes.forEach((n) => {
-      if (conflictTargetIds.has(n.id)) {
+      if (conflictNodeIds.has(n.id)) {
         n.data.isConflict = true;
+        n.data.conflictTooltip = conflictTooltipText;
       }
     });
 
-    // Convert backend edges to React Flow edges
+    // Convert edges
     graphPayload.edges.forEach((edge: any, idx: number) => {
       const source = edge.source || edge.from;
       const target = edge.target || edge.to;
       const predicate = edge.predicate || edge.relation || '';
-
-      if (!source || !target) {
-        console.warn('[OntologyGraph] Edge missing source or target:', edge);
-        return;
-      }
+      if (!source || !target) return;
 
       const predicateLabel = getPredicateLabel(predicate, lang);
-
-      // Check if edge is risk-related
       const targetNode = graphPayload.nodes.find((n: any) => n.id === target);
       const normalizedTargetType = normalizeNodeType(targetNode?.type);
       const isRiskEdge = predicate === 'TRIGGERS' || predicate === 'GENERATES_RISK' || normalizedTargetType === 'GENERATES_RISK' || normalizedTargetType === 'RISK';
       const isConflictEdge = predicate === 'CONFLICTS_WITH';
 
-      // Set colors based on edge type
-      let edgeColor = '#6B7280'; // Default gray
-      let labelColor = '#374151'; // Default dark gray
+      let edgeColor = '#D1D5DB';
+      let labelColor = '#6B7280';
 
       if (isRiskEdge) {
-        edgeColor = '#EF4444'; // Red
-        labelColor = '#991B1B'; // Dark red
+        edgeColor = '#FCA5A5';
+        labelColor = '#DC2626';
       } else if (isConflictEdge) {
-        edgeColor = '#F59E0B'; // Amber/Yellow
-        labelColor = '#92400E'; // Dark amber
+        edgeColor = '#FCD34D';
+        labelColor = '#D97706';
       }
 
       rfEdges.push({
         id: `${source}-${predicate}-${target}-${idx}`,
         source,
         target,
+        type: 'default',
+        animated: isConflictEdge || isRiskEdge,
         label: predicateLabel,
-        labelStyle: { fill: labelColor, fontSize: 16, fontWeight: 600 },
-        labelBgStyle: { fill: '#FFFFFF', fillOpacity: 1 },
-        labelBgPadding: [10, 12] as [number, number],
-        labelBgBorderRadius: 6,
-        style: { stroke: edgeColor, strokeWidth: 4 },
-        markerEnd: { type: MarkerType.ArrowClosed, color: edgeColor, width: 30, height: 30 },
+        labelStyle: { fill: labelColor, fontSize: 9, fontWeight: isConflictEdge ? 700 : 500 },
+        labelBgStyle: { fill: '#FFFFFF', fillOpacity: 0.9 },
+        labelBgPadding: [3, 5] as [number, number],
+        labelBgBorderRadius: 3,
+        style: { stroke: edgeColor, strokeWidth: isConflictEdge ? 2 : 1.5 },
+        markerEnd: { type: MarkerType.Arrow, color: edgeColor, width: 12, height: 12, strokeWidth: 1.5 },
         data: {
           predicate,
           isCore: CORE_PREDICATES.has(predicate),
-          edgeColor, // Store for use in node click handler
+          edgeColor,
         },
       });
     });
 
-    console.log('[OntologyGraph] Parsed nodes:', rfNodes.length);
-    console.log('[OntologyGraph] Parsed edges:', rfEdges.length);
-
     return { parsedNodes: rfNodes, parsedEdges: rfEdges };
-  }, [data, lang]);
+  }, [data, lang, conflicts]);
 
   // Apply edge filter
   const filteredEdges = useMemo(() => {
@@ -350,7 +443,7 @@ export function OntologyGraph({ data, lang }: OntologyGraphProps) {
     return parsedEdges.filter(edge => edge.data?.isCore);
   }, [parsedEdges, coreEdgesOnly]);
 
-  // Apply layout when data changes
+  // Apply layout
   useEffect(() => {
     if (parsedNodes.length === 0) {
       setNodes([]);
@@ -358,36 +451,30 @@ export function OntologyGraph({ data, lang }: OntologyGraphProps) {
       return;
     }
 
-    console.log('[OntologyGraph] Applying layout to', parsedNodes.length, 'nodes and', filteredEdges.length, 'edges');
-
     const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
       parsedNodes,
       filteredEdges,
       {
         direction: 'LR',
-        nodeWidth: 280,
-        nodeHeight: 280,
-        rankSep: 250,
-        nodeSep: 220,
+        nodeWidth: 190,
+        nodeHeight: 80,
+        rankSep: 180,
+        nodeSep: 60,
       }
     );
-
-    console.log('[OntologyGraph] After layout:', layoutedNodes.length, 'nodes,', layoutedEdges.length, 'edges');
 
     setNodes(layoutedNodes);
     setEdges(layoutedEdges);
 
-    // Fit view after a short delay to ensure layout is applied
     setTimeout(() => {
-      fitView({ padding: 0.2, duration: 300 });
+      fitView({ padding: 0.15, duration: 300 });
     }, 50);
   }, [parsedNodes, filteredEdges, setNodes, setEdges, fitView]);
 
-  // Handle node click - highlight neighbors
+  // Handle node click — highlight neighbors
   const onNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
       if (selectedNode === node.id) {
-        // Deselect - remove all highlights
         setSelectedNode(null);
         setNodes((nds) =>
           nds.map((n) => ({
@@ -398,15 +485,12 @@ export function OntologyGraph({ data, lang }: OntologyGraphProps) {
         setEdges((eds) =>
           eds.map((e) => ({
             ...e,
-            style: { ...e.style, opacity: 1, stroke: e.data?.edgeColor || '#6B7280' },
+            style: { ...e.style, opacity: 1, stroke: e.data?.edgeColor || '#D1D5DB' },
             animated: false,
           }))
         );
       } else {
-        // Select - highlight neighbors
         setSelectedNode(node.id);
-
-        // Find connected nodes
         const connectedNodeIds = new Set<string>([node.id]);
         const connectedEdgeIds = new Set<string>();
 
@@ -432,13 +516,13 @@ export function OntologyGraph({ data, lang }: OntologyGraphProps) {
         setEdges((eds) =>
           eds.map((e) => {
             const isConnected = connectedEdgeIds.has(e.id);
-            const originalColor = e.data?.edgeColor || '#6B7280';
+            const originalColor = e.data?.edgeColor || '#D1D5DB';
             return {
               ...e,
               style: {
                 ...e.style,
-                opacity: isConnected ? 1 : 0.2,
-                stroke: isConnected ? originalColor : '#D1D5DB',
+                opacity: isConnected ? 1 : 0.15,
+                stroke: isConnected ? originalColor : '#E5E7EB',
               },
               animated: isConnected,
             };
@@ -449,42 +533,12 @@ export function OntologyGraph({ data, lang }: OntologyGraphProps) {
     [selectedNode, edges, setNodes, setEdges]
   );
 
-  // Empty / partial states
-  if (!data?.graph_payload) {
-    return (
-      <div
-        style={{
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#9CA3AF',
-          fontSize: '14px',
-          gap: '12px',
-        }}
-      >
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-400"></div>
-        <div>{lang === 'en' ? 'Generating graph…' : '그래프 생성 중…'}</div>
-      </div>
-    );
-  }
+  if (!data?.graph_payload) return null;
 
   if (parsedNodes.length === 0 && parsedEdges.length === 0) {
     return (
-      <div
-        style={{
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#9CA3AF',
-          fontSize: '14px',
-        }}
-      >
-        관계 데이터가 아직 없습니다
+      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9CA3AF', fontSize: '13px' }}>
+        {lang === 'en' ? 'No relationship data available' : '관계 데이터가 아직 없습니다'}
       </div>
     );
   }
@@ -499,24 +553,19 @@ export function OntologyGraph({ data, lang }: OntologyGraphProps) {
         onNodeClick={onNodeClick}
         nodeTypes={nodeTypes}
         defaultEdgeOptions={{
-          type: 'straight',
-          markerEnd: { type: MarkerType.ArrowClosed, color: '#6B7280', width: 30, height: 30 },
-          style: { stroke: '#6B7280', strokeWidth: 4 },
+          type: 'default',
+          markerEnd: { type: MarkerType.Arrow, color: '#D1D5DB', width: 12, height: 12, strokeWidth: 1.5 },
+          style: { stroke: '#D1D5DB', strokeWidth: 1.5 },
         }}
         fitView
         attributionPosition="bottom-right"
-        minZoom={0.1}
+        minZoom={0.3}
         maxZoom={2}
+        proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#E5E7EB" />
         <Controls
-          style={{
-            button: {
-              backgroundColor: '#FFFFFF',
-              border: '1px solid #E5E7EB',
-              borderRadius: '4px',
-            },
-          }}
+          showInteractive={false}
+          style={{ bottom: 12, left: 12 }}
         />
       </ReactFlow>
     </div>
