@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import { useLang } from "../contexts/LangContext";
-import { API_BASE_URL } from "../../config";
+import { googleAuthUrl } from "../../config";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -52,7 +52,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
             {/* Google SSO */}
             <button
               type="button"
-              onClick={() => { window.location.href = `${API_BASE_URL}/v1/auth/google`; }}
+              onClick={() => { window.location.href = googleAuthUrl; }}
               className="w-full bg-white hover:bg-gray-50 border border-gray-300 hover:border-gray-400 text-gray-700 font-semibold py-3.5 rounded-lg transition-all flex items-center justify-center gap-3"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">

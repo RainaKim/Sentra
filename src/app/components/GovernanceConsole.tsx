@@ -4,15 +4,15 @@ import {
   Minus,
   XCircle,
   Bot,
+  ChevronRight,
 } from "lucide-react";
-import { useState, useEffect } from "react";
-import { useLocation } from "react-router";
+import { useState, useEffect, useRef } from "react";
+import { useLocation, useNavigate } from "react-router";
 import { useLang } from "../contexts/LangContext";
 import { useAuth } from "../contexts/AuthContext";
 import { ReactFlowProvider } from "reactflow";
 import { DecisionPackReport } from "./DecisionPackReport";
 import { RiskScoringPanel } from "./RiskScoringPanel";
-import { ExternalSignalsSection } from "./governance/ExternalSignalsSection";
 import { runDecisionFlow } from "../../api/decisionRunner";
 import { getCompanies } from "../../api/client";
 import { OntologyGraph } from "./ontology/OntologyGraph";
@@ -562,7 +562,7 @@ function extractRegion(result: DecisionResponse | null): string {
  * This prevents Korean text from overflowing SVG boxes whose width was
  * sized for Latin characters.
  */
-function wrapText(text: string, maxWidth: number): string[] {
+function wrapText(text: string, maxWidth: number, maxLines = 3): string[] {
   if (!text) return [];
 
   const charWidth = (ch: string): number => {
@@ -593,7 +593,7 @@ function wrapText(text: string, maxWidth: number): string[] {
   }
   if (currentLine) lines.push(currentLine);
 
-  return lines.slice(0, 3);
+  return lines.slice(0, maxLines);
 }
 
 interface GraphNode {
@@ -761,17 +761,19 @@ function buildGraphData(
   return { nodes, edges };
 }
 
-function buildReasoningData(result: DecisionResponse | null): {
+function buildReasoningData(result: DecisionResponse | null, lang: string): {
   conflicts: string[];
   riskAmplification: string[];
   recommendations: string[];
+  confidence: number | null;
+  analysisMethod: string | null;
 } {
   const conflicts: string[] = [];
   const riskAmplification: string[] = [];
   const recommendations: string[] = [];
 
   if (!result) {
-    return { conflicts, riskAmplification, recommendations };
+    return { conflicts, riskAmplification, recommendations, confidence: null, analysisMethod: null };
   }
 
   const reasoning = result.reasoning as Record<string, unknown> | undefined;
@@ -785,65 +787,90 @@ function buildReasoningData(result: DecisionResponse | null): {
     conflicts.push(...(logicalContradictions as string[]).slice(0, 3));
   }
 
+  // --- Dedupe helper: returns true if `candidate` is too similar to any existing string ---
+  const isSimilar = (candidate: string, existing: string[]): boolean => {
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+    const cn = norm(candidate);
+    return existing.some(e => {
+      const en = norm(e);
+      return cn.includes(en) || en.includes(cn) || cn === en;
+    });
+  };
+  const pushUnique = (arr: string[], items: string[]) => {
+    for (const item of items) {
+      if (!isSimilar(item, arr)) arr.push(item);
+    }
+  };
+
   // --- 위험 증폭 요인 ---
-  // Primary: reasoning.graph_recommendations (available when o1 is used)
-  const graphRecommendations = reasoning?.graph_recommendations;
-  if (Array.isArray(graphRecommendations) && graphRecommendations.length > 0) {
-    riskAmplification.push(...(graphRecommendations as string[]).slice(0, 2));
-  }
-  // Secondary: actual extracted risks from decision.risks
   const decisionRisks = result.decision?.risks ?? [];
   decisionRisks.slice(0, 2).forEach(r => {
-    if (r.description && !riskAmplification.includes(r.description)) {
-      riskAmplification.push(r.description);
-    }
+    if (r.description) pushUnique(riskAmplification, [r.description]);
   });
-  // Supplement with high-severity governance flags if still empty
   const flags = result.governance?.flags ?? [];
   if (riskAmplification.length === 0) {
     const highRiskFlags = flags.filter(f => f.severity === 'high' || f.severity === 'critical');
     highRiskFlags.slice(0, 2).forEach(f => {
-      riskAmplification.push(f.code?.replace(/_/g, ' ') ?? 'Risk detected');
+      pushUnique(riskAmplification, [f.code?.replace(/_/g, ' ') ?? 'Risk detected']);
     });
   }
-  // Supplement with completeness issues as last resort
   const issues = result.governance?.completeness_issues ?? [];
   if (riskAmplification.length === 0) {
-    issues.slice(0, 2).forEach(issue => riskAmplification.push(issue));
+    issues.slice(0, 2).forEach(issue => pushUnique(riskAmplification, [issue]));
   }
 
-  // --- 권장 조치 ---
-  // Primary source: decision_pack.recommended_next_actions (array of strings)
+  // --- 권장 조치 (merge graph_recommendations + next_actions, deduplicated) ---
+  const allRecs: string[] = [];
+  const graphRecommendations = reasoning?.graph_recommendations;
+  if (Array.isArray(graphRecommendations)) allRecs.push(...(graphRecommendations as string[]));
   const nextActions = pack?.recommended_next_actions;
-  if (Array.isArray(nextActions) && nextActions.length > 0) {
-    recommendations.push(...(nextActions as string[]).slice(0, 2));
-  }
+  if (Array.isArray(nextActions)) allRecs.push(...(nextActions as string[]));
+  pushUnique(recommendations, allRecs);
+
   // Supplement with approval chain if still empty
   if (recommendations.length === 0) {
     const approvalChain = result.governance?.approval_chain ?? [];
     approvalChain.slice(0, 2).forEach(item => {
-      recommendations.push(`${approvalChainItemName(item)} 승인 필요`);
+      pushUnique(recommendations, [lang === 'en' ? `${approvalChainItemName(item)} approval required` : `${approvalChainItemName(item)} 승인 필요`]);
     });
   }
-  // Supplement with requires_human_review flag
   if (result.governance?.requires_human_review && recommendations.length === 0) {
-    recommendations.push('전문가 검토 필요');
+    recommendations.push(lang === 'en' ? 'Expert review required' : '전문가 검토 필요');
   }
-
-  // Final fallback — should not normally be reached with real backend data
-  // risk_score is a governance-engine output, not o1 reasoning — do not show here.
   if (recommendations.length === 0) {
-    recommendations.push('추가 검토 권장');
+    recommendations.push(lang === 'en' ? 'Additional review recommended' : '추가 검토 권장');
   }
+  // Cap at 3 to keep the banner concise
+  recommendations.splice(3);
 
-  return { conflicts, riskAmplification, recommendations };
+  const rawConfidence = reasoning?.confidence as number | undefined;
+  const confidence = typeof rawConfidence === 'number'
+    ? (rawConfidence <= 1 ? Math.round(rawConfidence * 100) : Math.round(rawConfidence))
+    : null;
+  const analysisMethod = (reasoning?.analysis_method as string) ?? null;
+
+  return { conflicts, riskAmplification, recommendations, confidence, analysisMethod };
 }
+
+const CONSOLE_NAV_ITEMS = [
+  { label: "Reasoning Timeline", path: "/reasoning-timeline" },
+  { label: "Simulation Lab", path: "/simulation-lab" },
+  { label: "Evidence Explorer", path: "/evidence-explorer" },
+  { label: "Agent Boundaries", path: "/agent-boundaries" },
+];
+
+// ---------------------------------------------------------------------------
+// Module-level cache — shared with analysis tool screens via consoleCache store.
+// Persists across tab navigation but clears when a new decision is launched.
+// ---------------------------------------------------------------------------
+import { consoleCache, setConsoleCache, consoleCacheKey, getInflightKey, setInflight, clearInflight, updateCacheAndNotify, subscribeCache } from '../store/consoleCache';
 
 export function GovernanceConsole() {
   const location = useLocation();
+  const consolNavigate = useNavigate();
   const { t, lang } = useLang();
   const { token } = useAuth();
-  const flowState = (location.state ?? null) as {
+  const locationFlowState = (location.state ?? null) as {
     companyId?: string;
     decisionText?: string;
     decisionTextEn?: string;
@@ -854,33 +881,78 @@ export function GovernanceConsole() {
     workspaceDecisionId?: string;
   } | null;
 
-  const [analysisStep, setAnalysisStep] = useState(0); // 0: loading, 1-3: steps, 4: complete
+  // If the user navigated back without state (tab switch), restore from cache.
+  // If a new flowState arrives that differs from the cache, it's a new run.
+  const incomingKey = consoleCacheKey(locationFlowState);
+  const cacheHit = consoleCache !== null && (
+    incomingKey === null                          // tab navigation — no state
+    || incomingKey === consoleCache.cacheKey      // same decision re-opened
+  );
+  const flowState = cacheHit ? consoleCache!.flowState : locationFlowState;
+
+  // Clear stale cache when a genuinely new decision arrives
+  if (incomingKey !== null && consoleCache !== null && incomingKey !== consoleCache.cacheKey) {
+    setConsoleCache(null);
+  }
+
+  const [analysisStep, setAnalysisStep] = useState(cacheHit ? consoleCache!.analysisStep : 0);
   const [zoom, setZoom] = useState(1); // Zoom level: 0.5 to 2.0
   const [showDecisionPack, setShowDecisionPack] =
     useState(false);
 
   // Real result from backend (null when in demo mode or still processing)
   const [decisionResult, setDecisionResult] =
-    useState<DecisionResponse | null>(null);
+    useState<DecisionResponse | null>(cacheHit ? consoleCache!.result : null);
   // Pre-fetched company info for breadcrumb during analysis
-  const [prefetchedCompany, setPrefetchedCompany] = useState<import('../../api/types').Company | null>(null);
+  const [prefetchedCompany, setPrefetchedCompany] = useState<import('../../api/types').Company | null>(cacheHit ? consoleCache!.prefetchedCompany : null);
   // Non-null when the API call fails
   const [flowError, setFlowError] = useState<string | null>(null);
   // Live trace log entries accumulated from SSE events + rule results
-  const [traceLog, setTraceLog] = useState<{ text: string; color: string }[]>([]);
+  const [traceLog, setTraceLog] = useState<{ text: string; color: string }[]>(cacheHit ? consoleCache!.traceLog : []);
+  // Controls progress overlay visibility — dismissed immediately if cache hit, or after 1.5s on complete
+  const [overlayDismissed, setOverlayDismissed] = useState(cacheHit);
+
+  // Subscribe to in-flight cache updates (when user navigated away and came back)
+  useEffect(() => {
+    const key = getInflightKey();
+    if (!key) return;
+    // An analysis is still running in the background — sync state from cache updates
+    return subscribeCache((entry) => {
+      setAnalysisStep(entry.analysisStep);
+      setTraceLog(entry.traceLog);
+      if (entry.result) setDecisionResult(entry.result);
+      if (entry.prefetchedCompany) setPrefetchedCompany(entry.prefetchedCompany);
+      if (entry.analysisStep >= 4) setOverlayDismissed(false); // trigger dismiss timer
+    });
+  }, []);
 
   // Pre-fetch company info for breadcrumb
   useEffect(() => {
     if (!flowState?.companyId) return;
+    if (cacheHit && consoleCache?.prefetchedCompany) return; // already cached
     getCompanies(token ?? undefined)
       .then((list) => {
         const match = list.find((c) => c.id === flowState.companyId);
-        if (match) setPrefetchedCompany(match);
+        if (match) {
+          setPrefetchedCompany(match);
+          if (consoleCache) consoleCache.prefetchedCompany = match;
+        }
       })
       .catch(() => {});
   }, [flowState?.companyId]);
 
+  // Mutable ref to track accumulated trace log for the in-flight callbacks
+  const traceLogRef = useRef(traceLog);
+  traceLogRef.current = traceLog;
+
   useEffect(() => {
+    // Skip re-running if we restored from cache (tab navigation)
+    if (cacheHit) return;
+
+    // If an in-flight analysis is already running for this key, just subscribe — don't re-launch
+    const thisKey = consoleCacheKey(flowState);
+    if (thisKey && getInflightKey() === thisKey) return;
+
     // Stage → trace log label/color mapping
     const STAGE_LOG: Record<string, { prefix: string; color: string }> = {
       extracting:             { prefix: '[정보 추출]',   color: 'text-blue-600' },
@@ -913,6 +985,10 @@ export function GovernanceConsole() {
       ];
 
       // Live mode: run the real governance flow
+      // Track accumulated step + traceLog for cache updates that survive unmount
+      let latestStep = 0;
+      let latestTraceLog: { text: string; color: string }[] = [];
+
       const cancel = runDecisionFlow(
         {
           companyId: flowState.companyId,
@@ -927,11 +1003,24 @@ export function GovernanceConsole() {
         },
         {
           onProgress: ({ stepIndex, stage, message }) => {
-            setAnalysisStep((prev) => Math.max(prev, stepIndex));
+            latestStep = Math.max(latestStep, stepIndex);
             const info = STAGE_LOG[stage] ?? { prefix: '[분석 엔진]', color: 'text-gray-600' };
-            // Always use Korean stage name — backend messages are in English
             const text = `${info.prefix} ${STAGE_NAMES[stage] ?? stage.replace(/_/g, ' ')}...`;
+            latestTraceLog = [...latestTraceLog, { text, color: info.color }];
+            // Update component state (no-op if unmounted, but cache listeners get it)
+            setAnalysisStep((prev) => Math.max(prev, stepIndex));
             setTraceLog((prev) => [...prev, { text, color: info.color }]);
+            // Notify cache listeners (for re-mounted components)
+            if (thisKey && flowState) {
+              updateCacheAndNotify({
+                cacheKey: thisKey,
+                flowState,
+                result: null,
+                traceLog: latestTraceLog,
+                prefetchedCompany: null,
+                analysisStep: latestStep,
+              });
+            }
           },
           onComplete: (result) => {
             fallbackTimers.forEach(clearTimeout);
@@ -978,11 +1067,24 @@ export function GovernanceConsole() {
               const text = `[정책 검토] ${rule.rule_id ? rule.rule_id + ' ' : ''}${statusKr}: ${label}`;
               return { text, color };
             });
-            setTraceLog((prev) => [
-              ...prev,
+            const finalTraceLog = [
+              ...traceLogRef.current,
               { text: '[결과 생성] 의사결정 보고서 생성 완료', color: 'text-green-600' },
               ...ruleEntries,
-            ]);
+            ];
+            setTraceLog(finalTraceLog);
+            // Save to cache and notify listeners
+            if (thisKey && flowState) {
+              updateCacheAndNotify({
+                cacheKey: thisKey,
+                flowState,
+                result,
+                traceLog: finalTraceLog,
+                prefetchedCompany,
+                analysisStep: 4,
+              });
+            }
+            clearInflight();
           },
           onError: (err) => {
             fallbackTimers.forEach(clearTimeout);
@@ -992,12 +1094,17 @@ export function GovernanceConsole() {
               ...prev,
               { text: `[오류] ${err.message}`, color: 'text-red-600' },
             ]);
+            clearInflight();
           },
         },
       );
+
+      // Register as in-flight so it survives unmount
+      if (thisKey) setInflight(thisKey, cancel);
+
       return () => {
         fallbackTimers.forEach(clearTimeout);
-        cancel();
+        // Do NOT cancel the SSE — let it keep running in the background
       };
     } else {
       // Demo mode: simulate progress with timers + hardcoded log entries
@@ -1046,9 +1153,15 @@ export function GovernanceConsole() {
   const showRules = analysisStep >= 2;
   const showReasoning = analysisStep >= 3;
 
-  // Compute graph data from decision result
-  const graphData = buildGraphData(decisionResult, flowState?.decisionText ?? '', lang, flowState?.decisionTextEn);
-  const reasoningData = buildReasoningData(decisionResult);
+  // Dismiss progress overlay 1.5s after analysis completes so all steps are visible at 100%
+  useEffect(() => {
+    if (analysisStep >= 4 && !overlayDismissed) {
+      const timer = setTimeout(() => setOverlayDismissed(true), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [analysisStep, overlayDismissed]);
+
+  const reasoningData = buildReasoningData(decisionResult, lang);
 
   // Show Decision Pack Report if requested
   if (showDecisionPack) {
@@ -1062,8 +1175,45 @@ export function GovernanceConsole() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Error Banner — shown when API call fails */}
+    <div className="min-h-screen" style={{ backgroundColor: "#F1F2F7", fontFamily: "SUIT Variable, Inter, sans-serif" }}>
+      {/* Top Bar */}
+      <div className="h-12 bg-white border-b border-gray-200 flex items-center justify-between px-6 shadow-sm flex-shrink-0">
+        {/* Left - Logo + Breadcrumb */}
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2.5">
+            <div className="flex gap-0.5">
+              <div className="w-1.5 h-5 bg-gradient-to-b from-gray-700 to-gray-800 rounded-sm"></div>
+              <div className="w-1.5 h-5 bg-gradient-to-b from-gray-800 to-gray-900 rounded-sm mt-0.5"></div>
+              <div className="w-1.5 h-5 bg-gradient-to-b from-gray-900 to-black rounded-sm"></div>
+            </div>
+            <a href="/" className="font-bold text-sm tracking-wider text-gray-900">
+              DecisionGovernance AI
+            </a>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-gray-400">
+            <span className="uppercase tracking-wide font-medium">
+              {lang === 'en'
+                ? (decisionResult?.company?.industry_en ?? translateIndustry(decisionResult?.company?.industry, lang) ?? translateIndustry(prefetchedCompany?.industry, lang) ?? 'Platform')
+                : (decisionResult?.company?.industry ?? prefetchedCompany?.industry ?? 'Platform')}
+            </span>
+            <ChevronRight className="w-3 h-3" />
+            <span className="uppercase tracking-wide font-medium">
+              {lang === 'en'
+                ? (decisionResult?.company?.name_en ?? decisionResult?.company?.name ?? prefetchedCompany?.name_en ?? prefetchedCompany?.name ?? 'Decision Console')
+                : (decisionResult?.company?.name ?? prefetchedCompany?.name ?? 'Decision Console')}
+            </span>
+            <ChevronRight className="w-3 h-3" />
+            {isAnalyzing ? (
+              <span className="text-blue-600 animate-pulse font-semibold uppercase tracking-wide">{t('console.analyzing')}</span>
+            ) : (
+              <span className="text-gray-700 font-semibold uppercase tracking-wide">{t('console.complete')}</span>
+            )}
+          </div>
+        </div>
+        <></>
+      </div>
+
+      {/* Error Banner */}
       {flowError && (
         <div className="bg-red-50 border-b border-red-200 px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -1072,701 +1222,180 @@ export function GovernanceConsole() {
               {t('console.errorPrefix')} {flowError}
             </span>
           </div>
-          <button
-            onClick={() => setFlowError(null)}
-            className="text-xs text-red-500 hover:text-red-700 font-medium"
-          >
+          <button onClick={() => setFlowError(null)} className="text-xs text-red-500 hover:text-red-700 font-medium">
             {t('console.errorDismiss')}
           </button>
         </div>
       )}
 
-      {/* Top System Bar */}
-      <div className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-6 shadow-sm">
-        {/* Left - Logo */}
-        <div className="flex items-center gap-8">
-          <div className="flex items-center gap-2.5">
-            <div className="flex gap-0.5">
-              <div className="w-2 h-6 bg-gradient-to-b from-gray-700 to-gray-800 rounded-sm"></div>
-              <div className="w-2 h-6 bg-gradient-to-b from-gray-800 to-gray-900 rounded-sm mt-0.5"></div>
-              <div className="w-2 h-6 bg-gradient-to-b from-gray-900 to-black rounded-sm"></div>
-            </div>
-            <a
-              href="/"
-              className="font-bold text-sm tracking-wider text-gray-900"
-            >
-              DecisionGovernance AI
-            </a>
+      {/* Main Layout — sidebar + content */}
+      <div className="flex h-[calc(100vh-3rem)]">
+        {/* LEFT SIDEBAR */}
+        <div className="w-52 bg-white border-r border-gray-200 flex flex-col py-4 flex-shrink-0">
+          <div className="px-4 mb-3">
+            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Decisions</div>
           </div>
-
-          {/* Breadcrumb */}
-          <div className="text-xs text-gray-500 flex items-center gap-2.5">
-            <span className="uppercase tracking-wide font-medium">
-              {lang === 'en'
-                ? (decisionResult?.company?.industry_en ?? translateIndustry(decisionResult?.company?.industry, lang) ?? translateIndustry(prefetchedCompany?.industry, lang) ?? '—')
-                : (decisionResult?.company?.industry ?? prefetchedCompany?.industry ?? '—')}
-            </span>
-            <span className="text-gray-300">›</span>
-            <span className="uppercase tracking-wide font-medium">
-              {lang === 'en'
-                ? (decisionResult?.company?.name_en ?? decisionResult?.company?.name ?? prefetchedCompany?.name_en ?? prefetchedCompany?.name ?? flowState?.companyId ?? '—')
-                : (decisionResult?.company?.name ?? prefetchedCompany?.name ?? flowState?.companyId ?? '—')}
-            </span>
-            <span className="text-gray-300">›</span>
-            {isAnalyzing ? (
-              <span className="text-blue-600 animate-pulse font-semibold uppercase tracking-wide">
-                {t('console.analyzing')}
-              </span>
-            ) : (
-              <span className="text-gray-700 font-semibold uppercase tracking-wide">
-                {t('console.complete')}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Right - Status */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 rounded-lg border border-green-200">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
-            <span className="text-xs font-semibold text-green-700 uppercase tracking-wide">Active</span>
-          </div>
-
-          {decisionResult && (
-            <div className="text-xs text-gray-600">
-              <span className="text-gray-500">{t('console.confidence')}</span>{" "}
-              <span className="text-gray-900 font-bold">
-                {(() => {
-                  const raw = decisionResult.decision_pack as Record<string, unknown> | undefined;
-                  const summary = raw?.summary as Record<string, unknown> | undefined;
-                  const score = summary?.confidence_score as number | undefined;
-                  return score != null ? `${(score * 100).toFixed(0)}%` : '—';
-                })()}
-              </span>
-            </div>
-          )}
-
           <button
-            disabled={isAnalyzing}
-            onClick={() =>
-              !isAnalyzing && setShowDecisionPack(true)
-            }
-            className={`px-5 py-2.5 text-sm font-semibold rounded-xl transition-all ${
-              isAnalyzing
-                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                : "bg-gray-900 text-white hover:bg-gray-800 shadow-md hover:shadow-lg"
-            }`}
+            onClick={() => {}}
+            className="w-full text-left px-4 py-2.5 text-xs font-medium flex items-center gap-2 bg-gray-900 text-white"
           >
-            {isAnalyzing ? t('console.generating') : t('console.generateReport')}
+            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-white" />
+            Decision Console
           </button>
-        </div>
-      </div>
 
-      {/* Main Layout - 3 Columns */}
-      <div className="flex h-[calc(100vh-3.5rem)]" style={{ backgroundColor: '#F1F2F7' }}>
-        {/* LEFT PANEL - AI Agent Decision Context */}
-        <div className="w-[450px] h-full">
-          <div className="pl-6 pr-2 pt-6 pb-4 h-full">
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm h-full flex flex-col overflow-hidden">
-              <div className="p-6 space-y-5 overflow-y-auto flex-1">
+          <div className="px-4 mt-4 mb-3">
+            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Analysis Tools</div>
+          </div>
+          {CONSOLE_NAV_ITEMS.map((item) => (
+            <button
+              key={item.path}
+              disabled={isAnalyzing}
+              onClick={() => {
+                if (isAnalyzing) return;
+                const did = decisionResult?.decision_id;
+                consolNavigate(did ? `${item.path}?decision_id=${encodeURIComponent(did)}` : item.path);
+              }}
+              className={`w-full text-left px-4 py-2.5 text-xs font-medium transition-colors flex items-center gap-2 ${
+                isAnalyzing
+                  ? 'text-gray-300 cursor-not-allowed'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+              }`}
+              title={isAnalyzing ? 'Analysis in progress…' : undefined}
+            >
+              <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isAnalyzing ? 'bg-gray-200' : 'bg-gray-300'}`} />
+              {item.label}
+            </button>
+          ))}
 
-                {/* Panel title */}
-                <h2 className="text-xl font-bold text-gray-900 uppercase tracking-wider">
-                  {t('console.left.title')}
-                </h2>
-
-                {/* Decision Proposal */}
-                <div>
-                  <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
-                    {t('console.left.proposal')}
-                  </div>
-                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-800 leading-relaxed font-medium">
-                    "{lang === 'en'
-                      ? (flowState?.decisionTextEn ?? flowState?.decisionText ?? DEMO_INPUT)
-                      : (flowState?.decisionText ?? DEMO_INPUT)}"
-                  </div>
-                </div>
-
-                {/* Decision Source */}
-                <div>
-                  <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
-                    {t('console.left.source')}
-                  </div>
-                  <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-3">
-                    <div className="w-7 h-7 rounded-lg bg-gray-900 flex items-center justify-center flex-shrink-0">
-                      <Bot className="w-3.5 h-3.5 text-white" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold text-gray-900">{t('console.left.sourceAgent')}</div>
-                      <div className="text-[10px] text-gray-400 mt-0.5">
-                        {lang === 'en'
-                          ? (decisionResult?.agent_name_en ?? decisionResult?.agent_name ?? flowState?.agentNameEn ?? flowState?.agentName ?? '—')
-                          : (decisionResult?.agent_name ?? flowState?.agentName ?? '—')}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Extracted Decision Entities */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                      {t('console.left.entities')}
-                    </div>
-                    {showExtractedData && (
-                      <span className="text-[10px] text-green-600 font-semibold flex items-center gap-1">
-                        <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
-                        {t('console.left.done')}
-                      </span>
-                    )}
-                  </div>
-
-                  {showExtractedData ? (() => {
-                    const entities = decisionResult?.decision_context?.entities ?? [];
-                    return (
-                      <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100 animate-in fade-in duration-500">
-                        {entities.length > 0 ? entities.map((entity) => (
-                          <div key={entity.key} className="px-3.5 py-2.5">
-                            <div className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">{entity.label}</div>
-                            <div className="text-xs font-semibold text-gray-900 mt-0.5">{entity.value}</div>
-                          </div>
-                        )) : (
-                          <div className="px-3.5 py-3 text-xs text-gray-400 italic">
-                            {lang === 'en' ? 'No structured entities extracted' : '추출된 항목 없음'}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })() : (
-                    <p className="text-xs text-gray-400 italic">
-                      {t('console.left.pendingEntities')}
-                    </p>
-                  )}
-                </div>
-
-              </div>
-            </div>
+          <div className="mt-auto px-4 pt-4 border-t border-gray-100 mx-4">
+            <div className="text-[10px] text-gray-400 font-medium">Decision ID</div>
+            <div className="text-[10px] font-semibold text-gray-700 font-mono mt-0.5">DEC-2024-09-1847</div>
           </div>
         </div>
+
+        {/* CONTENT */}
+        <div className="flex-1 flex flex-col overflow-hidden" style={{ backgroundColor: '#F1F2F7' }}>
+        {/* Two-panel row: Graph + Validation */}
+        <div className="flex flex-1 overflow-hidden">
 
         {/* CENTER PANEL - Governance Mind Map */}
-        <div className="flex-1" style={{ backgroundColor: '#F1F2F7' }}>
-          <div className="px-4 pt-6 pb-4 h-full">
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm h-full flex flex-col overflow-hidden">
-              <div className="p-6 flex flex-col h-full">
-            {/* Header with Stepper during analysis */}
-            <div className="mb-4 flex-shrink-0">
-              {isAnalyzing && (
-                <div className="mb-4 bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
-                  <div className="flex items-center gap-4">
-                    <div
-                      className={`flex items-center gap-2.5 ${analysisStep >= 1 ? "text-green-600" : "text-gray-400"}`}
-                    >
-                      <div
-                        className={`w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold ${analysisStep >= 1 ? "border-green-600 bg-green-50" : "border-gray-300 bg-white"}`}
-                      >
-                        {analysisStep >= 1 ? "✓" : "1"}
-                      </div>
-                      <span className="text-xs font-semibold uppercase tracking-wide">
-                        {t('console.step.extraction')}
-                      </span>
-                    </div>
-                    <div className="text-gray-300">→</div>
-                    <div
-                      className={`flex items-center gap-2.5 ${analysisStep >= 2 ? "text-green-600" : "text-gray-400"}`}
-                    >
-                      <div
-                        className={`w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold ${analysisStep >= 2 ? "border-green-600 bg-green-50" : "border-gray-300 bg-white"}`}
-                      >
-                        {analysisStep >= 2 ? "✓" : "2"}
-                      </div>
-                      <span className="text-xs font-semibold uppercase tracking-wide">
-                        {t('console.step.policy')}
-                      </span>
-                    </div>
-                    <div className="text-gray-300">→</div>
-                    <div
-                      className={`flex items-center gap-2.5 ${analysisStep >= 3 ? "text-green-600" : "text-gray-400"}`}
-                    >
-                      <div
-                        className={`w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold ${analysisStep >= 3 ? "border-green-600 bg-green-50" : "border-gray-300 bg-white"}`}
-                      >
-                        {analysisStep >= 3 ? "✓" : "3"}
-                      </div>
-                      <span className="text-xs font-semibold uppercase tracking-wide">
-                        {t('console.step.reasoning')}
-                      </span>
-                    </div>
-                  </div>
+        <div className="flex-1 flex flex-col overflow-hidden px-4 pt-4 pb-4">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col h-full overflow-hidden">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-100 flex-shrink-0">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h1 className="text-base font-bold text-gray-900">{t('console.graph.title')}</h1>
+                  <p className="text-xs text-gray-500 mt-0.5 truncate max-w-[600px]">
+                    {lang === 'en'
+                      ? (decisionResult?.agent_name_en ?? decisionResult?.agent_name ?? flowState?.agentNameEn ?? flowState?.agentName ?? 'AI Agent')
+                      : (decisionResult?.agent_name ?? flowState?.agentName ?? 'AI Agent')}
+                    {' · '}
+                    {lang === 'en'
+                      ? (decisionResult?.decision_context?.proposal_en ?? decisionResult?.decision_context?.proposal ?? '—')
+                      : (decisionResult?.decision_context?.proposal ?? '—')}
+                  </p>
                 </div>
-              )}
-
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-gray-900 uppercase tracking-wider">
-                  {t('console.graph.title')}
-                </h2>
-
+                <div className="flex items-center gap-3">
+                  {decisionResult && (
+                    <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-1 rounded border border-gray-200">
+                      {(() => {
+                        const raw = decisionResult.decision_pack as Record<string, unknown> | undefined;
+                        const summary = raw?.summary as Record<string, unknown> | undefined;
+                        const score = summary?.confidence_score as number | undefined;
+                        return score != null ? `${t('console.confidence')} ${(score * 100).toFixed(0)}%` : null;
+                      })()}
+                    </span>
+                  )}
+                  <button
+                    disabled={isAnalyzing}
+                    onClick={() => !isAnalyzing && setShowDecisionPack(true)}
+                    className={`px-3 py-1.5 text-[10px] font-semibold rounded-lg transition-all ${
+                      isAnalyzing
+                        ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                        : "bg-gray-900 text-white hover:bg-gray-800"
+                    }`}
+                  >
+                    {isAnalyzing ? t('console.generating') : t('console.generateReport')}
+                  </button>
+                </div>
               </div>
             </div>
 
             {/* Graph Area */}
-            <div
-              className="flex-1 rounded-xl border border-gray-200 relative overflow-hidden bg-white shadow-sm"
-            >
+            <div className="flex-1 relative overflow-hidden">
               <ReactFlowProvider>
-                <OntologyGraph data={decisionResult} lang={lang} />
+                <OntologyGraph data={decisionResult} lang={lang} conflicts={reasoningData.conflicts} />
               </ReactFlowProvider>
-            </div>
 
-            {/* REMOVED: Old SVG Graph - Replaced with OntologyGraph */}
-            {false && <svg
-                className="w-full h-full"
-                viewBox="0 0 1100 650"
-              >
-                <g
-                  transform={`scale(${zoom}) translate(${zoom === 1 ? 0 : (1 - zoom) * 550}, ${zoom === 1 ? 0 : (1 - zoom) * 325})`}
-                >
-                  {/* Dynamic Connection Lines */}
-                  {graphData.edges.map((edge, idx) => {
-                    const fromNode = graphData.nodes.find(n => n.id === edge.from);
-                    const toNode = graphData.nodes.find(n => n.id === edge.to);
-                    if (!fromNode || !toNode) return null;
-                    
-                    // Calculate line endpoints based on node positions
-                    const x1 = fromNode.id === 'decision' ? fromNode.x : fromNode.x;
-                    const y1 = fromNode.id === 'decision' ? fromNode.y : fromNode.y;
-                    const x2 = toNode.id === 'decision' ? toNode.x : toNode.x;
-                    const y2 = toNode.id === 'decision' ? toNode.y : toNode.y;
-                    
-                    return (
-                      <line
-                        key={`edge-${idx}`}
-                        x1={x1}
-                        y1={y1}
-                        x2={x2}
-                        y2={y2}
-                        stroke={edge.color}
-                        strokeWidth={edge.width ?? 2}
-                        strokeDasharray={edge.dashed ? "4 4" : undefined}
-                        className={edge.animated ? "animate-pulse" : undefined}
-                      />
-                    );
-                  })}
-
-                  {/* Conflict edges when reasoning is shown */}
-                  {showReasoning && graphData.nodes.filter(n => n.type === 'goal').length > 1 && (
-                    <>
-                      <line
-                        x1="610"
-                        y1="95"
-                        x2="850"
-                        y2="180"
-                        stroke="#F59E0B"
-                        strokeWidth="3"
-                      />
-                      <line
-                        x1="610"
-                        y1="535"
-                        x2="850"
-                        y2="420"
-                        stroke="#F59E0B"
-                        strokeWidth="3"
-                      />
-                      <line
-                        x1="930"
-                        y1="180"
-                        x2="930"
-                        y2="420"
-                        stroke="#D97706"
-                        strokeWidth="2"
-                        strokeDasharray="6 6"
-                        className="animate-pulse"
-                      />
-                      {/* Conflict badge */}
-                      <rect
-                        x="900"
-                        y="290"
-                        width="60"
-                        height="20"
-                        fill="#F59E0B"
-                        rx="6"
-                      />
-                      <text
-                        x="930"
-                        y="303"
-                        fill="#FFF"
-                        fontSize="9"
-                        textAnchor="middle"
-                        fontWeight="700"
-                      >
-                        CONFLICT
-                      </text>
-                    </>
-                  )}
-
-                  {/* Dynamic Actor Node */}
-                  {graphData.nodes.filter(n => n.type === 'actor').map((node) => (
-                    <g key={node.id}>
-                      {/* Label outside and above the box */}
-                      <text
-                        x={node.x}
-                        y={node.y - 48}
-                        fill={node.color.label}
-                        fontSize="12"
-                        textAnchor="middle"
-                        fontWeight="600"
-                      >
-                        {node.label}
-                      </text>
-                      <rect
-                        x={node.x - 80}
-                        y={node.y - 40}
-                        width="160"
-                        height="80"
-                        fill="#FFFFFF"
-                        stroke={node.color.border}
-                        strokeWidth="2"
-                        rx="8"
-                      />
-                      <text
-                        x={node.x}
-                        y={node.y + 5}
-                        fill={node.color.text}
-                        fontSize="16"
-                        textAnchor="middle"
-                        fontWeight="700"
-                      >
-                        {node.subLabel}
-                      </text>
-                    </g>
-                  ))}
-
-                  {/* Dynamic Goal Nodes */}
-                  {graphData.nodes.filter(n => n.type === 'goal').map((node) => {
-                    const textLines = wrapText(node.subLabel ?? '', 28);
-                    const nodeHeight = Math.max(80, 55 + textLines.length * 17);
-                    return (
-                      <g key={node.id}>
-                        {/* Label outside and above the box */}
-                        <text
-                          x={node.x}
-                          y={node.y - nodeHeight / 2 - 8}
-                          fill={node.color.label}
-                          fontSize="12"
-                          textAnchor="middle"
-                          fontWeight="600"
-                        >
-                          {node.label}
-                        </text>
-                        <rect
-                          x={node.x - 110}
-                          y={node.y - nodeHeight / 2}
-                          width="220"
-                          height={nodeHeight}
-                          fill="#FFFFFF"
-                          stroke={node.color.border}
-                          strokeWidth="2"
-                          rx="8"
-                        />
-                        {textLines.map((line, lineIdx) => (
-                          <text
-                            key={lineIdx}
-                            x={node.x}
-                            y={node.y - nodeHeight / 2 + 24 + lineIdx * 16}
-                            fill={node.color.text}
-                            fontSize="14"
-                            textAnchor="middle"
-                            fontWeight="600"
-                          >
-                            {line}
-                          </text>
-                        ))}
-                      </g>
-                    );
-                  })}
-
-                  {/* Decision Root Node (Center) - Always shown */}
-                  {graphData.nodes.filter(n => n.type === 'decision').map((node) => {
-                    const textLines = wrapText(node.subLabel ?? '', 40);
-                    const nodeHeight = Math.max(100, 50 + textLines.length * 18);
-                    return (
-                      <g key={node.id}>
-                        {/* Label outside and above the box */}
-                        <text
-                          x={node.x}
-                          y={node.y - nodeHeight / 2 - 8}
-                          fill={node.color.label}
-                          fontSize="13"
-                          textAnchor="middle"
-                          fontWeight="600"
-                        >
-                          {node.label}
-                        </text>
-                        <rect
-                          x={node.x - 170}
-                          y={node.y - nodeHeight / 2}
-                          width="340"
-                          height={nodeHeight}
-                          fill="#FFFFFF"
-                          stroke={node.color.border}
-                          strokeWidth="3"
-                          rx="8"
-                        />
-                        {textLines.map((line, lineIdx) => (
-                          <text
-                            key={lineIdx}
-                            x={node.x}
-                            y={node.y - nodeHeight / 2 + 28 + lineIdx * 18}
-                            fill={node.color.text}
-                            fontSize="16"
-                            textAnchor="middle"
-                            fontWeight="700"
-                          >
-                            {line}
-                          </text>
-                        ))}
-                      </g>
-                    );
-                  })}
-
-                  {/* Dynamic KPI Node */}
-                  {graphData.nodes.filter(n => n.type === 'kpi').map((node) => {
-                    const targetValue = (node as GraphNode & { targetValue?: string }).targetValue;
-                    const textLines = wrapText(node.subLabel ?? '', 18);
-                    const nodeHeight = Math.max(80, 50 + textLines.length * 14 + (targetValue ? 20 : 0));
-                    return (
-                      <g key={node.id}>
-                        {/* Label outside and above the box */}
-                        <text
-                          x={node.x}
-                          y={node.y - nodeHeight / 2 - 8}
-                          fill={node.color.label}
-                          fontSize="12"
-                          textAnchor="middle"
-                          fontWeight="600"
-                        >
-                          {node.label}
-                        </text>
-                        <rect
-                          x={node.x - 80}
-                          y={node.y - nodeHeight / 2}
-                          width="160"
-                          height={nodeHeight}
-                          fill="#FFFFFF"
-                          stroke={node.color.border}
-                          strokeWidth="2"
-                          rx="8"
-                        />
-                        {textLines.map((line, lineIdx) => (
-                          <text
-                            key={lineIdx}
-                            x={node.x}
-                            y={node.y - nodeHeight / 2 + 20 + lineIdx * 14}
-                            fill={node.color.text}
-                            fontSize="14"
-                            textAnchor="middle"
-                            fontWeight="700"
-                          >
-                            {line}
-                          </text>
-                        ))}
-                        {targetValue && (
-                          <text
-                            x={node.x}
-                            y={node.y + nodeHeight / 2 - 12}
-                            fill="#059669"
-                            fontSize="15"
-                            textAnchor="middle"
-                            fontWeight="700"
-                          >
-                            {targetValue}
-                          </text>
-                        )}
-                      </g>
-                    );
-                  })}
-
-                  {/* Dynamic Policy/Risk Nodes */}
-                  {showRules && graphData.nodes.filter(n => n.type === 'risk').map((node) => {
-                    const textLines = wrapText(node.subLabel ?? '', 20);
-                    const nodeHeight = Math.max(80, 50 + textLines.length * 14);
-                    return (
-                      <g key={node.id}>
-                        {/* Label outside and above the box */}
-                        <text
-                          x={node.x}
-                          y={node.y - nodeHeight / 2 - 8}
-                          fill={node.color.label}
-                          fontSize="12"
-                          textAnchor="middle"
-                          fontWeight="600"
-                        >
-                          {node.label}
-                        </text>
-                        <rect
-                          x={node.x - 90}
-                          y={node.y - nodeHeight / 2}
-                          width="180"
-                          height={nodeHeight}
-                          fill="#FFFFFF"
-                          stroke={node.color.border}
-                          strokeWidth="2"
-                          rx="8"
-                        />
-                        <rect
-                          x={node.x - 90}
-                          y={node.y - nodeHeight / 2}
-                          width="180"
-                          height={nodeHeight}
-                          fill="none"
-                          stroke={node.color.border}
-                          strokeWidth="1"
-                          strokeDasharray="4 4"
-                          rx="8"
-                          className="animate-pulse"
-                        />
-                        {textLines.map((line, lineIdx) => (
-                          <text
-                            key={lineIdx}
-                            x={node.x}
-                            y={node.y - nodeHeight / 2 + 20 + lineIdx * 14}
-                            fill={node.color.text}
-                            fontSize="14"
-                            textAnchor="middle"
-                            fontWeight="700"
-                          >
-                            {line}
-                          </text>
-                        ))}
-                      </g>
-                    );
-                  })}
-
-                  {/* 심층 분석 결과 요약 - uses foreignObject for proper text wrapping */}
-                  {showReasoning && (
-                    <g>
-                      <rect
-                        x="830"
-                        y="90"
-                        width="240"
-                        height="390"
-                        fill="#FEF3C7"
-                        fillOpacity="0.35"
-                        stroke="#F59E0B"
-                        strokeWidth="2"
-                        rx="12"
-                      />
-                      <foreignObject x="834" y="94" width="232" height="382">
-                        <div
-                          style={{
-                            width: '232px',
-                            height: '382px',
-                            padding: '12px 10px',
-                            boxSizing: 'border-box',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '14px', // slightly more gap for larger text
-                            fontFamily: 'system-ui, sans-serif',
-                            fontSize: '15px', // increased from 13px to 15px
-                            lineHeight: 1.7, // more readable
-                          }}
-                        >
-                          {/* Title */}
-                          <div style={{ fontSize: '13px', fontWeight: 700, color: '#D97706', textAlign: 'center', borderBottom: '1px solid #FCD34D', paddingBottom: '6px' }}>
-                            {lang === 'en' ? 'Deep Analysis Summary' : '심층 분석 결과 요약'}
-                          </div>
-
-                          {/* Conflicts */}
-                          <div>
-                            <div style={{ fontSize: '12px', fontWeight: 600, color: '#92400E', marginBottom: '4px' }}>
-                              {lang === 'en' ? 'Strategic Conflicts' : '전략적 충돌 감지'}
-                            </div>
-                            {reasoningData.conflicts.length === 0 ? (
-                              <div style={{ fontSize: '11px', color: '#92400E', opacity: 0.7 }}>{lang === 'en' ? 'No conflicts detected' : '충돌 미감지'}</div>
-                            ) : (
-                              reasoningData.conflicts.slice(0, 2).map((c, i) => (
-                                <div key={i} style={{ fontSize: '11px', color: '#92400E', lineHeight: '1.5', marginBottom: '3px', wordBreak: 'keep-all', overflowWrap: 'break-word' }}>
-                                  · {c}
-                                </div>
-                              ))
-                            )}
-                          </div>
-
-                          {/* Risk amplification */}
-                          <div>
-                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#DC2626', marginBottom: '4px' }}>
-                              {lang === 'en' ? 'Risk Amplifiers' : '위험 증폭 요인'}
-                            </div>
-                            {reasoningData.riskAmplification.length === 0 ? (
-                              <div style={{ fontSize: '11px', color: '#EF4444', opacity: 0.7 }}>{lang === 'en' ? 'No risk factors' : '위험 요소 없음'}</div>
-                            ) : (
-                              reasoningData.riskAmplification.slice(0, 2).map((r, i) => (
-                                <div key={i} style={{ fontSize: '11px', color: '#EF4444', lineHeight: '1.5', marginBottom: '3px', wordBreak: 'keep-all', overflowWrap: 'break-word' }}>
-                                  · {r}
-                                </div>
-                              ))
-                            )}
-                          </div>
-
-                          {/* Recommendations */}
-                          <div>
-                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#059669', marginBottom: '4px' }}>
-                              {lang === 'en' ? 'Recommendations' : '권장 조치'}
-                            </div>
-                            {(() => {
-                              const recs = reasoningData.recommendations.filter(r => typeof r === 'string' && !r.includes('[object Object]'));
-                              return recs.length === 0 ? (
-                                <div style={{ fontSize: '11px', color: '#047857', opacity: 0.7 }}>{lang === 'en' ? 'Further review recommended' : '추가 검토 권장'}</div>
-                              ) : (
-                                recs.slice(0, 3).map((rec, i) => (
-                                  <div key={i} style={{ fontSize: '11px', color: '#047857', lineHeight: '1.5', marginBottom: '4px', wordBreak: 'keep-all', overflowWrap: 'break-word' }}>
-                                    · {rec}
-                                  </div>
-                                ))
-                              );
-                            })()}
-                          </div>
-                        </div>
-                      </foreignObject>
-                    </g>
-                  )}
-                </g>
-              </svg>}
-            {/* END REMOVED: Old SVG Graph */}
-
-            {/* Bottom Alert Banner - o1 Reasoning Output - Only show if conflicts detected */}
-            {showReasoning && reasoningData.conflicts.length > 0 && (
-              <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between animate-in fade-in duration-500">
-                <div className="flex items-center gap-3.5">
-                  <AlertTriangle className="w-5 h-5 text-amber-600" />
-                  <div>
-                    <div className="text-sm font-bold text-amber-900 uppercase tracking-wide">
-                      {t('console.conflict.title')}
-                    </div>
-                    <p className="text-xs text-amber-700 mt-1">
-                      {reasoningData.conflicts.slice(0, 2).join('. ')}
-                      {reasoningData.riskAmplification.length > 0 && `. ${reasoningData.riskAmplification[0]}`}
+              {/* Progress overlay while analyzing */}
+              {!overlayDismissed && (
+                <div className="absolute inset-0 bg-white flex flex-col justify-center px-10">
+                  {/* Completed breadcrumb */}
+                  {analysisStep > 0 && (
+                    <p className="text-xs text-gray-300 mb-5 font-medium tracking-wide">
+                      {[
+                        t('console.astep.1.title'),
+                        t('console.astep.2.title'),
+                        t('console.astep.3.title'),
+                        t('console.astep.4.title'),
+                      ].slice(0, analysisStep).join(' → ')}
                     </p>
+                  )}
+                  {/* Progress bar */}
+                  <div className="mb-5">
+                    <div className="flex items-center justify-end mb-1.5">
+                      <span className="text-xs text-gray-400 font-medium">{Math.round((analysisStep / 4) * 100)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="h-full bg-gray-800 rounded-full transition-all duration-700 ease-in-out"
+                        style={{ width: `${Math.round((analysisStep / 4) * 100)}%` }}
+                      />
+                    </div>
                   </div>
+                  {/* Active step text — pulses while running, static when complete */}
+                  {(() => {
+                    const steps = [
+                      { title: t('console.astep.1.title'), desc: t('console.astep.1.desc') },
+                      { title: t('console.astep.2.title'), desc: t('console.astep.2.desc') },
+                      { title: t('console.astep.3.title'), desc: t('console.astep.3.desc.default') },
+                      { title: t('console.astep.4.title'), desc: t('console.astep.4.desc.default') },
+                    ];
+                    const step = steps[Math.min(analysisStep, 3)];
+                    const isComplete = analysisStep >= 4;
+                    return (
+                      <p className={`text-sm font-medium text-gray-600 ${isComplete ? '' : 'animate-pulse'}`}>
+                        {isComplete
+                          ? (lang === 'en' ? `${step.title} · Complete` : `${step.title} · 완료`)
+                          : `${lang === 'en' ? 'Running' : '실행 중'} ${step.title} · ${step.desc}`}
+                      </p>
+                    );
+                  })()}
                 </div>
-              </div>
-            )}
-              </div>
+              )}
             </div>
+
+
+
           </div>
         </div>
 
         {/* RIGHT PANEL - Rules, Approvals, Trace Log */}
-        <div className="w-[450px] h-full">
-          <div className="pl-2 pr-6 pt-6 pb-4 h-full">
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm h-full flex flex-col overflow-hidden">
-              <div className="p-6 space-y-6 overflow-y-auto flex-1">
+        <div className="w-96 flex flex-col pt-4 pb-4 pr-4 flex-shrink-0">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col h-full overflow-hidden">
             {/* Header */}
-            <h2 className="text-xl font-bold text-gray-900 uppercase tracking-wider">
-              {t('console.right.title')}
-            </h2>
+            <div className="px-5 py-4 border-b border-gray-100 flex-shrink-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">{t('console.right.title')}</span>
+              </div>
+              <h2 className="text-sm font-bold text-gray-900">
+                {isAnalyzing ? t('console.analyzing') : t('console.complete')}
+              </h2>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
 
-            {/* 1. Governance Verdict */}
+            {/* 1. Governance Verdict - compact */}
             {(() => {
               const status = decisionResult?.governance?.status ?? null;
               const allRules = decisionResult?.governance?.all_rules ?? [];
@@ -1774,11 +1403,6 @@ export function GovernanceConsole() {
                 const s = r.status?.toUpperCase();
                 return s === 'TRIGGERED' || s === 'VIOLATION';
               });
-              const chain = (decisionResult?.governance?.approval_chain ?? []) as Record<string, unknown>[];
-              const firstRequired = chain.find(raw => raw?.status === 'required');
-              const primaryApprover = firstRequired
-                ? String(firstRequired.role ?? firstRequired.name ?? '')
-                : null;
               const riskScore = decisionResult?.governance?.risk_score ?? 0;
 
               if (!decisionResult) {
@@ -1810,7 +1434,7 @@ export function GovernanceConsole() {
                 : { label: bandLabel, cls: 'bg-green-100 text-green-700' };
 
               return (
-                <div className={`rounded-xl border p-4 space-y-3 animate-in fade-in duration-500 ${verdictBg} ${verdictBorder}`}>
+                <div className={`rounded-xl border p-4 space-y-2 animate-in fade-in duration-500 ${verdictBg} ${verdictBorder}`}>
                   <div className="flex items-center justify-between">
                     <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       {t('console.right.verdict.title')}
@@ -1819,613 +1443,162 @@ export function GovernanceConsole() {
                       {riskBand.label}
                     </span>
                   </div>
-                  <div className={`text-base font-bold ${statusColor}`}>
+                  <div className={`text-sm font-bold ${statusColor}`}>
                     {statusText || '—'}
                   </div>
                   {firedRules.length > 0 && (
-                    <div>
-                      <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1.5">
-                        {t('console.right.verdict.reasons')}
-                      </div>
-                      <ul className="space-y-1">
-                        {firedRules.slice(0, 3).map((rule, i) => (
-                          <li key={rule.rule_id ?? i} className="text-xs text-gray-700 flex items-start gap-1.5">
-                            <span className="text-gray-400 flex-shrink-0 mt-0.5">·</span>
-                            <span className="break-words">
-                              {lang === 'en'
-                                ? (rule.description_en ?? rule.name_en ?? rule.description ?? rule.name ?? rule.rule_id)
-                                : (rule.description ?? rule.name ?? rule.rule_id)}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {primaryApprover && (
-                    <div>
-                      <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">
-                        {t('console.right.verdict.approver')}
-                      </div>
-                      <div className="text-xs font-semibold text-gray-900">{primaryApprover}</div>
-                    </div>
+                    <ul className="space-y-0.5 pt-1">
+                      {firedRules.slice(0, 2).map((rule, i) => (
+                        <li key={rule.rule_id ?? i} className="text-xs text-gray-600 flex items-start gap-1.5">
+                          <span className="text-gray-400 flex-shrink-0 mt-0.5">·</span>
+                          <span className="break-words leading-relaxed">
+                            {lang === 'en'
+                              ? (rule.description_en ?? rule.name_en ?? rule.description ?? rule.name ?? rule.rule_id)
+                              : (rule.description ?? rule.name ?? rule.rule_id)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               );
             })()}
 
-            {/* 2. Risk Analysis */}
-            <div className="space-y-2">
-              {decisionResult?.risk_scoring && (
-                <h3 className="text-sm font-semibold text-gray-900">
-                  {t('console.right.risk.section')}
-                </h3>
-              )}
-              <RiskScoringPanel
-                riskScoring={decisionResult?.risk_scoring}
-                governanceEvidence={decisionResult?.governance_evidence}
-                status={decisionResult?.status}
-              />
-            </div>
-
-            {/* 3. External Signals */}
-            {decisionResult?.external_signals && (
-              <ExternalSignalsSection signals={decisionResult.external_signals} />
-            )}
-
-            {/* 4. Triggered Governance Rules */}
-            {showRules && (
-              <div className="space-y-3 animate-in fade-in duration-500">
+            {/* 2. Approval Path - compact */}
+            {showRules && (decisionResult?.governance?.approval_chain ?? []).length > 0 && (
+              <div className="space-y-2 animate-in fade-in duration-500">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-900">
-                    {t('console.right.rules.title')}
-                  </h3>
-                  <span className="text-xs text-gray-400 font-mono">
-                    {decisionResult?.governance?.all_rules?.length ?? 0}{t('console.right.rules.count')}
-                  </span>
-                </div>
-
-                <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden">
-                  {(() => {
-                    const allRules = decisionResult?.governance?.all_rules ?? [];
-                    const firedRules = allRules.filter(r => {
-                      const s = r.status?.toUpperCase();
-                      return s === 'TRIGGERED' || s === 'VIOLATION';
-                    });
-                    const passedCount = allRules.filter(r => r.status?.toUpperCase() === 'PASSED').length;
-
-                    if (allRules.length === 0) {
-                      return (
-                        <div className="px-4 py-3.5 text-xs text-gray-400 italic">
-                          {t('console.right.rules.empty')}
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <>
-                        {/* Fired rules — show full detail */}
-                        {firedRules.map((rule, idx) => (
-                          <FiredRuleRow
-                            key={rule.rule_id ?? idx}
-                            rule={rule}
-                            idx={idx}
-                            isFirst={idx === 0}
-                            t={t}
-                            lang={lang}
-                          />
-                        ))}
-
-                        {/* Passed rules — single summary row */}
-                        {passedCount > 0 && (
-                          <>
-                            {firedRules.length > 0 && <div className="h-px bg-gray-200"></div>}
-                            <div className="px-4 py-3 flex items-center justify-between">
-                              <span className="text-xs text-gray-500">
-                                {t('console.right.rules.remaining')}{passedCount}{t('console.right.rules.remainingSuffix')}
-                              </span>
-                              <span className="text-xs font-bold text-green-600">{t('console.right.rules.passed')}</span>
-                            </div>
-                          </>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-            )}
-
-            {/* 5. Approval Chain */}
-            {showRules && (
-              <div className="space-y-3 animate-in fade-in duration-500">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-900">
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     {t('console.right.approval.title')}
                   </h3>
-                  <span className="text-xs text-gray-400 font-mono">
-                    {decisionResult?.governance?.requires_human_review ? 'HIGH-ASSURANCE' : 'STANDARD'}
-                  </span>
+                  <button
+                    onClick={() => { const did = decisionResult?.decision_id; consolNavigate(did ? `/evidence-explorer?decision_id=${encodeURIComponent(did)}` : '/evidence-explorer'); }}
+                    className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    {lang === 'en' ? 'View Details →' : '상세 보기 →'}
+                  </button>
                 </div>
-
-                <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden">
-                  {(() => {
-                    const chain = decisionResult?.governance?.approval_chain ?? [];
-
-                    if (chain.length === 0) {
-                      return (
-                        <div className="px-4 py-3.5 text-xs text-gray-400 italic">
-                          {t('console.right.approval.empty')}
-                        </div>
-                      );
-                    }
-
-                    const approvalEvidence = decisionResult?.governance_evidence?.approvalEvidence ?? [];
-                    const allRules = decisionResult?.governance?.all_rules ?? [];
-                    return chain.map((raw, idx) => {
-                      const obj = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : null;
-                      const role = obj?.role ? String(obj.role) : null;
-                      const name = obj?.name ? String(obj.name) : null;
-                      const matches = (a: string, b: string) => {
-                        const al = a.toLowerCase(), bl = b.toLowerCase();
-                        return al === bl || al.includes(bl) || bl.includes(al);
-                      };
-                      const itemEvidence = approvalEvidence.filter((e) => {
-                        const titleKo = e.titleKo ?? '';
-                        const titleEn = e.titleEn ?? '';
-                        return (role && (matches(titleKo, role) || matches(titleEn, role)))
-                          || (name && (matches(titleKo, name) || matches(titleEn, name)));
-                      });
-                      return (
-                        <ApprovalChainRow
-                          key={idx}
-                          raw={raw}
-                          idx={idx}
-                          total={chain.length}
-                          t={t}
-                          lang={lang}
-                          evidence={itemEvidence}
-                          allRules={allRules}
-                        />
-                      );
-                    });
-                  })()}
+                <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
+                  {(decisionResult?.governance?.approval_chain ?? []).map((raw, idx, arr) => {
+                    const obj = raw && typeof raw === 'object' ? raw as Record<string, unknown> : null;
+                    const role = obj?.role ? String(obj.role) : obj?.name ? String(obj.name) : '—';
+                    const rawStatus = obj?.status ? String(obj.status) : '';
+                    const statusLabel = rawStatus === 'optional'
+                      ? t('console.right.approval.status.optional')
+                      : t('console.right.approval.status.pending');
+                    const statusColor = rawStatus === 'optional' ? 'text-gray-400' : 'text-amber-600';
+                    return (
+                      <div key={idx} className={`px-4 py-2.5 flex items-center justify-between ${idx < arr.length - 1 ? 'border-b border-gray-200' : ''}`}>
+                        <span className="text-xs text-gray-700">{role}</span>
+                        <span className={`text-xs font-semibold ${statusColor}`}>{statusLabel}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
-            {/* 6. Analysis Engine Status */}
-            {showExtractedData && (
-              <div className="space-y-3">
-                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                  {t('console.right.engine.title')}
-                </h3>
-                <div className="flex gap-2.5">
-                  <div className={`flex-1 px-3.5 py-3 rounded-xl border text-center transition-all ${showExtractedData ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"}`}>
-                    <div className="text-xs text-gray-600 uppercase tracking-wide mb-1.5">
-                      {t('console.right.ruleEngine')}
-                    </div>
-                    <div className={`text-xs font-bold ${showExtractedData ? "text-green-600" : "text-gray-400"}`}>
-                      {showExtractedData ? "ACTIVE" : "IDLE"}
-                    </div>
+            {/* 3. Governance Triggers - compact */}
+            {showRules && (() => {
+              const firedRules = (decisionResult?.governance?.all_rules ?? []).filter(r => {
+                const s = r.status?.toUpperCase();
+                return s === 'TRIGGERED' || s === 'VIOLATION';
+              });
+              if (firedRules.length === 0) return null;
+              return (
+                <div className="space-y-2 animate-in fade-in duration-500">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      {t('console.right.rules.title')}
+                    </h3>
+                    <button
+                      onClick={() => { const did = decisionResult?.decision_id; consolNavigate(did ? `/evidence-explorer?decision_id=${encodeURIComponent(did)}` : '/evidence-explorer'); }}
+                      className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      {lang === 'en' ? 'View Evidence →' : '근거 보기 →'}
+                    </button>
                   </div>
-                  <div className={`flex-1 px-3.5 py-3 rounded-xl border text-center transition-all ${showReasoning ? "bg-amber-50 border-amber-200" : "bg-gray-50 border-gray-200"}`}>
-                    <div className="text-xs text-gray-600 uppercase tracking-wide mb-1.5">
-                      {t('console.right.deepReasoning')}
-                    </div>
-                    <div className={`text-xs font-bold ${showReasoning ? "text-amber-600" : "text-gray-400"}`}>
-                      {showReasoning ? "ACTIVE" : "IDLE"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Analysis Progress Detail */}
-            {showExtractedData && (
-              <div className="space-y-3.5">
-                {/* Unified Analysis Status */}
-                <div className="bg-gray-900 rounded-lg p-4 space-y-4">
-                  {/* Progress Circle and Status */}
-                  <div className="flex items-center gap-4">
-                    {/* Circular Progress */}
-                    <div className="relative w-16 h-16 flex-shrink-0">
-                      <svg className="w-16 h-16 transform -rotate-90">
-                        {/* Background circle */}
-                        <circle
-                          cx="32"
-                          cy="32"
-                          r="28"
-                          stroke="#374151"
-                          strokeWidth="4"
-                          fill="none"
-                        />
-                        {/* Progress circle */}
-                        <circle
-                          cx="32"
-                          cy="32"
-                          r="28"
-                          stroke={analysisStep === 4 ? "#10B981" : "#8B5CF6"}
-                          strokeWidth="4"
-                          fill="none"
-                          strokeDasharray={`${(analysisStep / 4) * 175.93} 175.93`}
-                          strokeLinecap="round"
-                          className="transition-all duration-500"
-                        />
-                      </svg>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className={`text-sm font-bold ${analysisStep === 4 ? 'text-green-400' : 'text-purple-400'}`}>
-                          {Math.round((analysisStep / 4) * 100)}%
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
+                    {firedRules.map((rule, idx) => (
+                      <div key={rule.rule_id ?? idx} className={`px-4 py-2.5 flex items-start justify-between gap-2 ${idx < firedRules.length - 1 ? 'border-b border-gray-200' : ''}`}>
+                        <span className="text-xs text-gray-700 leading-relaxed">
+                          {rule.rule_id && <span className="font-mono text-gray-400 mr-1">{rule.rule_id}</span>}
+                          {lang === 'en' ? (rule.name_en ?? rule.name ?? rule.rule_id) : (rule.name ?? rule.rule_id)}
+                        </span>
+                        <span className="text-[10px] font-bold text-red-500 flex-shrink-0 mt-0.5">
+                          {lang === 'en' ? 'Triggered' : '트리거'}
                         </span>
                       </div>
-                    </div>
-
-                    {/* Status Text */}
-                    <div className="flex-1">
-                      <div className="text-xs font-semibold text-white mb-1">
-                        {analysisStep === 4 ? t('console.right.engine.complete') : t('console.right.engine.running')}
-                      </div>
-                      <div className="text-xs text-gray-300">
-                        {analysisStep === 0 && t('console.right.engine.idle')}
-                        {analysisStep === 1 && t('console.right.engine.step1')}
-                        {analysisStep === 2 && t('console.right.engine.step2')}
-                        {analysisStep === 3 && t('console.right.engine.step3')}
-                        {analysisStep === 4 && t('console.right.engine.step4')}
-                      </div>
-                    </div>
+                    ))}
                   </div>
+                </div>
+              );
+            })()}
 
-                  {/* Analysis Steps */}
-                  <div className="space-y-2.5 pt-2 border-t border-gray-700">
-                    {[
-                      { step: 1, title: t('console.astep.1.title'), desc: t('console.astep.1.desc'), hasWarning: false },
-                      { step: 2, title: t('console.astep.2.title'), desc: t('console.astep.2.desc'), hasWarning: false },
-                      {
-                        step: 3,
-                        title: t('console.astep.3.title'),
-                        desc: (() => {
-                          const triggeredRules = (decisionResult?.governance?.all_rules ?? []).filter(r => {
-                            const s = r.status?.toUpperCase();
-                            return s === 'TRIGGERED' || s === 'VIOLATION';
-                          });
-                          if (triggeredRules.length > 0) {
-                            const rule = triggeredRules[0];
-                            const ruleDesc = lang === 'en'
-                              ? (rule.description_en ?? rule.name_en ?? rule.description ?? rule.name ?? t('report.gov.violation'))
-                              : (rule.description ?? rule.name ?? t('report.gov.violation'));
-                            return `${rule.rule_id ?? ''} ${t('report.gov.triggered')}: ${ruleDesc}`.trim();
-                          }
-                          return t('console.astep.3.desc.default');
-                        })(),
-                        hasWarning: (() => {
-                          const triggeredRules = (decisionResult?.governance?.all_rules ?? []).filter(r => {
-                            const s = r.status?.toUpperCase();
-                            return s === 'TRIGGERED' || s === 'VIOLATION';
-                          });
-                          return triggeredRules.length > 0;
-                        })()
-                      },
-                      {
-                        step: 4,
-                        title: t('console.astep.4.title'),
-                        desc: (() => {
-                          const strategicGoals = extractStrategicGoals(decisionResult);
-                          if (strategicGoals.length > 0) {
-                            const goal = strategicGoals[0];
-                            return lang === 'en'
-                              ? `Verifying logical alignment with ${goal.name}`
-                              : `${goal.name}와의 논리적 일치 여부 확인`;
-                          }
-                          const kpis = extractKPIs(decisionResult);
-                          if (kpis.length > 0) {
-                            return lang === 'en'
-                              ? `Verifying alignment with corporate KPI (${kpis[0].metric})`
-                              : `전사 KPI(${kpis[0].metric})와의 논리적 일치 여부 확인`;
-                          }
-                          return t('console.astep.4.desc.default');
-                        })(),
-                        hasWarning: false
-                      },
-                      {
-                        step: 5,
-                        title: t('console.astep.5.title'),
-                        desc: (() => {
-                          const riskScore = decisionResult?.governance?.risk_score ?? 0;
-                          const riskLevel = riskScore >= 7 ? 'High-Risk' : riskScore >= 4 ? 'Medium-Risk' : 'Low-Risk';
-                          return lang === 'en'
-                            ? `Aggregate risk assessment (${riskLevel}) and impact scope analysis`
-                            : `종합 위험도(${riskLevel}) 및 영향 범위 분석`;
-                        })(),
-                        hasWarning: false
-                      },
-                      { step: 6, title: t('console.astep.6.title'), desc: t('console.astep.6.desc'), hasWarning: false },
-                    ].map((item) => {
-                      // Steps 1-3 map directly to analysisStep 1-3
-                      // Steps 4-6 complete at analysisStep 4
-                      const isComplete = item.step <= 3 ? analysisStep >= item.step : analysisStep >= 4;
-                      const isInProgress = item.step <= 3
-                        ? analysisStep === item.step - 1
-                        : analysisStep === 3 && item.step === 4; // Step 4+ shows in-progress at analysisStep 3
-                      const isPending = !isComplete && !isInProgress;
-
+            {/* 4. Risk Snapshot - compact */}
+            {decisionResult?.risk_scoring && (() => {
+              const agg = decisionResult.risk_scoring!.aggregate;
+              const dims = (decisionResult.risk_scoring!.dimensions ?? []).slice(0, 2);
+              const bandColor = agg.band === 'CRITICAL' ? 'text-red-600' : agg.band === 'HIGH' ? 'text-orange-600' : agg.band === 'MEDIUM' ? 'text-amber-600' : 'text-green-600';
+              return (
+                <div className="space-y-2 animate-in fade-in duration-500">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      {t('console.right.risk.section')}
+                    </h3>
+                    <button
+                      onClick={() => { const did = decisionResult?.decision_id; consolNavigate(did ? `/evidence-explorer?decision_id=${encodeURIComponent(did)}` : '/evidence-explorer'); }}
+                      className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      {lang === 'en' ? 'View Evidence →' : '근거 보기 →'}
+                    </button>
+                  </div>
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="px-4 py-2.5 flex items-center justify-between border-b border-gray-200">
+                      <span className="text-xs text-gray-500">{lang === 'en' ? 'Risk Score' : '위험도'}</span>
+                      <span className={`text-xs font-bold ${bandColor}`}>{agg.score} / 100</span>
+                    </div>
+                    {dims.map((dim, idx) => {
+                      const dimBandColor = dim.band === 'CRITICAL' ? 'text-red-500' : dim.band === 'HIGH' ? 'text-orange-500' : dim.band === 'MEDIUM' ? 'text-amber-500' : 'text-green-500';
                       return (
-                        <div key={item.step} className="flex items-start gap-3">
-                          {/* Status Icon */}
-                          {isComplete && !item.hasWarning && (
-                            <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0 mt-0.5">
-                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                              </svg>
-                            </div>
-                          )}
-                          {isComplete && item.hasWarning && (
-                            <div className="w-5 h-5 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0 mt-0.5">
-                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                              </svg>
-                            </div>
-                          )}
-                          {isInProgress && (
-                            <div className="w-5 h-5 rounded-full border-2 border-purple-500 flex items-center justify-center flex-shrink-0 mt-0.5">
-                              <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></div>
-                            </div>
-                          )}
-                          {isPending && (
-                            <div className="w-5 h-5 rounded-full border-2 border-gray-600 flex-shrink-0 mt-0.5"></div>
-                          )}
-
-                          {/* Content */}
-                          <div className="flex-1 min-w-0">
-                            <div className={`text-xs font-semibold ${isComplete || isInProgress ? 'text-white' : 'text-gray-500'}`}>
-                              {item.title}
-                            </div>
-                            <div className={`text-xs mt-0.5 ${isComplete || isInProgress ? 'text-gray-300' : 'text-gray-600'}`}>
-                              {item.desc}
-                            </div>
-                          </div>
-
-                          {/* Status Label */}
-                          {isComplete && !item.hasWarning && (
-                            <span className="text-xs font-semibold text-green-400 flex-shrink-0">{t('console.astep.complete')}</span>
-                          )}
-                          {isComplete && item.hasWarning && (
-                            <span className="text-xs font-semibold text-amber-400 flex-shrink-0">{t('console.astep.warning')}</span>
-                          )}
-                          {isInProgress && (
-                            <span className="text-xs font-semibold text-purple-400 flex-shrink-0">{t('console.astep.parallel')}</span>
-                          )}
+                        <div key={idx} className={`px-4 py-2.5 flex items-center justify-between ${idx < dims.length - 1 ? 'border-b border-gray-200' : ''}`}>
+                          <span className="text-xs text-gray-600">{lang === 'en' ? (dim.label_en ?? dim.label) : dim.label}</span>
+                          <span className={`text-xs font-semibold ${dimBandColor}`}>{dim.band}</span>
                         </div>
                       );
                     })}
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
-            {/* Impact Simulation - KPI Forecast */}
-            {false && showReasoning && (
-              <div className="space-y-3.5 animate-in fade-in duration-700">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-900">
-                    {t('console.impact.title')}
-                  </h3>
-                  <span className="text-xs text-purple-600 font-semibold uppercase tracking-wide">
-                    {t('console.impact.reasoning')}
+            {/* 5. External Signals - compact summary */}
+            {decisionResult && (
+              <div className="flex items-center justify-between py-2 border-t border-gray-100">
+                <div>
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-0.5">
+                    {t('console.right.signals.title')}
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    {lang === 'en' ? 'External context reviewed' : '외부 신호 검토 완료'}
                   </span>
                 </div>
-
-                {(() => {
-                  const kpis = extractKPIs(decisionResult);
-                  const strategicGoals = extractStrategicGoals(decisionResult);
-                  const riskScore = decisionResult?.governance?.risk_score ?? 0;
-                  const flags = decisionResult?.governance?.flags ?? [];
-                  const hasHighRisk = flags.some(f => f.severity === 'high' || f.severity === 'critical') || riskScore >= 7;
-
-                  // Show strategic goals if available (new backend structure)
-                  if (decisionResult && strategicGoals.length > 0) {
-                    return (
-                      <>
-                        <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 space-y-4">
-                          <div>
-                            <div className="flex items-center justify-between mb-3">
-                              <span className="text-xs text-gray-600 uppercase tracking-wide font-semibold">{t('console.impact.strategicGoals')}</span>
-                            </div>
-                            <div className="space-y-3">
-                              {strategicGoals.map((goal, idx) => {
-                                const isConflict = goal.status === 'conflict';
-                                const statusColor = isConflict ? 'text-red-600' : 'text-green-600';
-                                const statusBg = isConflict ? 'bg-red-50' : 'bg-green-50';
-                                const statusBorder = isConflict ? 'border-red-200' : 'border-green-200';
-                                const statusLabel = isConflict ? 'CONFLICT' : 'ALIGNED';
-
-                                return (
-                                  <div key={idx} className="space-y-1.5">
-                                    <div className="flex items-start gap-2">
-                                      <span className="text-gray-400 mt-0.5">•</span>
-                                      <div className="flex-1">
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                          <span className="text-sm font-semibold text-gray-900">
-                                            {goal.name}
-                                          </span>
-                                          <span className="text-xs text-gray-500">
-                                            ({goal.goal_id})
-                                          </span>
-                                          <span className={`px-2 py-0.5 rounded text-xs font-bold ${statusColor} ${statusBg} border ${statusBorder}`}>
-                                            {statusLabel}
-                                          </span>
-                                        </div>
-                                        {goal.reasoning && (
-                                          <div className="mt-1.5 flex items-start gap-2 text-xs text-gray-600 leading-relaxed">
-                                            <span className="text-gray-400 flex-shrink-0">└─</span>
-                                            <span className="break-words">{goal.reasoning}</span>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                        <p className="text-xs text-gray-500 italic">{t('console.impact.footerStrategic')}</p>
-                      </>
-                    );
-                  }
-
-                  // Real data with no KPIs — compliance/approval check; show governance impact instead
-                  if (decisionResult && kpis.length === 0) {
-                    const risks = extractRisks(decisionResult);
-                    const triggeredRules = (decisionResult.governance?.all_rules ?? []).filter(r => {
-                      const s = r.status?.toUpperCase();
-                      return s === 'TRIGGERED' || s === 'VIOLATION';
-                    });
-                    return (
-                      <>
-                        <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 space-y-4">
-                          {/* Risk impact */}
-                          {risks.length > 0 && (
-                            <div>
-                              <div className="flex items-center justify-between mb-1.5">
-                                <span className="text-xs text-gray-600 uppercase tracking-wide">{t('console.impact.riskImpact')}</span>
-                                <span className={`text-sm font-bold ${hasHighRisk ? 'text-red-600' : 'text-amber-600'}`}>
-                                  {hasHighRisk ? t('console.impact.high') : t('console.impact.medium')}
-                                </span>
-                              </div>
-                              <p className="text-xs text-gray-700 leading-relaxed break-words">
-                                {risks[0].description ?? t('console.impact.noRisk')}
-                              </p>
-                            </div>
-                          )}
-                          {/* Triggered rules */}
-                          {triggeredRules.length > 0 && (
-                            <div>
-                              <div className="flex items-center justify-between mb-1.5">
-                                <span className="text-xs text-gray-600 uppercase tracking-wide">{t('console.impact.violations')}</span>
-                                <span className="text-sm font-bold text-red-600">{triggeredRules.length}{t('console.impact.detected')}</span>
-                              </div>
-                              <p className="text-xs text-gray-700 leading-relaxed break-words">
-                                {triggeredRules[0].description ?? triggeredRules[0].name ?? triggeredRules[0].rule_id ?? t('console.impact.noRule')}
-                              </p>
-                            </div>
-                          )}
-                          {/* Approval required */}
-                          {(decisionResult.governance?.requires_human_review || (decisionResult.governance?.approval_chain ?? []).length > 0) && (
-                            <div>
-                              <div className="flex items-center justify-between mb-1.5">
-                                <span className="text-xs text-gray-600 uppercase tracking-wide">{t('console.impact.approvalNeeded')}</span>
-                                <span className="text-sm font-bold text-amber-600">{t('console.impact.pendingReview')}</span>
-                              </div>
-                              <p className="text-xs text-gray-700 leading-relaxed">
-                                {t('console.impact.complianceNote')}
-                              </p>
-                            </div>
-                          )}
-                          {risks.length === 0 && triggeredRules.length === 0 && (
-                            <p className="text-xs text-gray-500 italic">{t('console.impact.noKpi')}</p>
-                          )}
-                        </div>
-                        <p className="text-xs text-gray-500 italic">{t('console.impact.footerGovernance')}</p>
-                      </>
-                    );
-                  }
-
-                  // No real data — demo mode fallback
-                  if (!decisionResult || kpis.length === 0) {
-                    return (
-                      <>
-                        <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 space-y-5">
-                          <div>
-                            <div className="flex items-center justify-between mb-2.5">
-                              <span className="text-xs text-gray-600 uppercase tracking-wide">K1 EU ARR</span>
-                              <span className="text-sm font-bold text-green-600">+$15M</span>
-                            </div>
-                            <div className="h-9 bg-white rounded-lg overflow-hidden flex items-end gap-1 px-2 pb-1.5 border border-gray-200">
-                              <div className="w-1.5 bg-green-500 h-3 rounded-t"></div>
-                              <div className="w-1.5 bg-green-500 h-4 rounded-t"></div>
-                              <div className="w-1.5 bg-green-500 h-5 rounded-t"></div>
-                              <div className="w-1.5 bg-green-500 h-6 rounded-t"></div>
-                              <div className="w-1.5 bg-green-500 h-7 rounded-t"></div>
-                            </div>
-                            <p className="text-xs text-gray-500 mt-2">{t('console.impact.positive')}</p>
-                          </div>
-                          <div>
-                            <div className="flex items-center justify-between mb-2.5">
-                              <span className="text-xs text-gray-600 uppercase tracking-wide">K3 Cost/Unit</span>
-                              <span className="text-sm font-bold text-red-600">+18%</span>
-                            </div>
-                            <div className="h-9 bg-white rounded-lg overflow-hidden flex items-end gap-1 px-2 pb-1.5 border border-gray-200">
-                              <div className="w-1.5 bg-red-500 h-3 rounded-t"></div>
-                              <div className="w-1.5 bg-red-500 h-4 rounded-t"></div>
-                              <div className="w-1.5 bg-red-500 h-5 rounded-t"></div>
-                              <div className="w-1.5 bg-red-500 h-6 rounded-t"></div>
-                              <div className="w-1.5 bg-red-500 h-7 rounded-t"></div>
-                            </div>
-                            <p className="text-xs text-gray-500 mt-2">{t('console.impact.negative')}</p>
-                          </div>
-                        </div>
-                        <p className="text-xs text-gray-500 italic">{t('console.impact.footerDemo')}</p>
-                      </>
-                    );
-                  }
-
-                  // Live data with KPIs: render real KPI impact
-                  return (
-                    <>
-                      <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 space-y-5">
-                        {kpis.slice(0, 4).map((kpi, idx) => {
-                          const metricLower = (kpi.metric ?? '').toLowerCase();
-                          const isCostMetric =
-                            metricLower.includes('cost') ||
-                            metricLower.includes('expense') ||
-                            metricLower.includes('지출') ||
-                            metricLower.includes('비용');
-                          // High risk → overall negative signal on non-cost KPIs too
-                          const isNegative = isCostMetric || (hasHighRisk && idx > 0);
-                          const barColor = isNegative ? 'bg-red-500' : 'bg-green-500';
-                          const valueColor = isNegative ? 'text-red-600' : 'text-green-600';
-                          const targetDisplay = kpi.target != null ? String(kpi.target) : '—';
-                          const impactLabel = isNegative ? '부정적 영향 예상' : '긍정적 영향 예상';
-                          return (
-                            <div key={idx}>
-                              <div className="flex items-center justify-between mb-2.5">
-                                <span className="text-xs text-gray-600 uppercase tracking-wide truncate max-w-[60%]">
-                                  {kpi.metric}
-                                </span>
-                                <span className={`text-sm font-bold ${valueColor}`}>
-                                  {targetDisplay}
-                                </span>
-                              </div>
-                              <div className="h-9 bg-white rounded-lg overflow-hidden flex items-end gap-1 px-2 pb-1.5 border border-gray-200">
-                                <div className={`w-1.5 ${barColor} h-3 rounded-t`}></div>
-                                <div className={`w-1.5 ${barColor} h-4 rounded-t`}></div>
-                                <div className={`w-1.5 ${barColor} h-5 rounded-t`}></div>
-                                <div className={`w-1.5 ${barColor} h-6 rounded-t`}></div>
-                                <div className={`w-1.5 ${barColor} h-7 rounded-t`}></div>
-                              </div>
-                              <p className="text-xs text-gray-500 mt-2">{isNegative ? t('console.impact.negative') : t('console.impact.positive')}</p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <p className="text-xs text-gray-500 italic">{t('console.impact.footerSim')}</p>
-                    </>
-                  );
-                })()}
+                <button
+                  onClick={() => { const did = decisionResult?.decision_id; consolNavigate(did ? `/evidence-explorer?decision_id=${encodeURIComponent(did)}` : '/evidence-explorer'); }}
+                  className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 ml-2"
+                >
+                  {lang === 'en' ? 'View →' : '보기 →'}
+                </button>
               </div>
             )}
 
-            {/* System Metadata Footer */}
-            <div className="pt-5 border-t border-gray-200 flex items-center justify-between text-xs text-gray-500">
-              <span className="font-mono">DATA STREAM: 6.0.4 STABLE</span>
-              <span className="flex items-center gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
-                LIVE MODE (EV)
-              </span>
-            </div>
-              </div>
+
             </div>
           </div>
         </div>
-      </div>
+        </div>{/* end two-panel row */}
+        </div>{/* end content */}
+      </div>{/* end main layout */}
     </div>
   );
 }

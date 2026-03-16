@@ -586,10 +586,10 @@ export const translations: Record<Lang, Record<string, string>> = {
     'nav.back': 'Back',
 
     // ── Hero — main headline ─────────────────────────────────────────────
-    'hero.headline1': 'AI decisions,',
-    'hero.headline2': 'governed by',
-    'hero.headline3': 'your policies.',
-    'hero.subheadline': 'Enforce your approval chain and compliance rules\nfor every AI-driven decision, in real time.',
+    'hero.headline1': 'Govern every',
+    'hero.headline2': 'AI agent decision',
+    'hero.headline3': 'before it executes.',
+    'hero.subheadline': "We validate AI-driven decisions against your organization's policies, risk tolerances, and approval structures in real time.",
 
     // ── Hero — auth card ─────────────────────────────────────────────────
     'auth.card.title': 'Sign in with your work account',
@@ -703,7 +703,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'console.step.reasoning': 'Deep Reasoning',
 
     // ── Console — center panel ───────────────────────────────────────────
-    'console.graph.title': 'DECISION KNOWLEDGE GRAPH',
+    'console.graph.title': 'Decision Knowledge Graph',
     'console.conflict.title': 'Strategic Conflict Detected',
 
     // ── Console — right panel ────────────────────────────────────────────
@@ -1003,7 +1003,7 @@ export const translations: Record<Lang, Record<string, string>> = {
 
     // ── HowItWorks ───────────────────────────────────────────────────────────
     'how.title': 'Technical Differentiators for Safe Organizational Decision-Making',
-    'how.step1.title': 'Start with Any Idea',
+    'how.step1.title': 'AI Agent Decision Proposal',
     'how.step1.desc': 'Unstructured proposals, emails, rough notes — our AI ingests any form of input and begins processing immediately.',
     'how.step2.title': 'Standardize & Structure the Data',
     'how.step2.desc': 'Scattered text is distilled into clean, analyzable data centered on core objectives and risk factors.',

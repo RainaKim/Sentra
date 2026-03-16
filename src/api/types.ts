@@ -290,6 +290,8 @@ export interface RiskResponseScenario {
   remainingIssuesEn?: string[];
   confidence?: number;
   isRecommended?: boolean;
+  rationaleKo?: string;
+  rationaleEn?: string;
 }
 
 /** Returned at top level of DecisionResponse when backend computes scenarios */
@@ -510,4 +512,124 @@ export interface ExternalSignals {
   operationalSignals?: ExternalSignalItem[];
   regulatorySignals?: ExternalSignalItem[];
   generatedAt?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Reasoning Timeline — GET /v1/decisions/{id}/reasoning-trace
+// ---------------------------------------------------------------------------
+
+export interface ReasoningStep {
+  id: number;
+  name: string;
+  description: string;
+  timestamp: string;
+  duration: string;
+  status: 'completed' | 'failed' | 'skipped';
+  summary: string;
+  entities: string[];
+  ontology: string[];
+}
+
+export interface ReasoningTraceResponse {
+  decision_id: string;
+  total_duration_ms: number;
+  steps: ReasoningStep[];
+}
+
+// ---------------------------------------------------------------------------
+// Simulation Lab — POST /v1/decisions/{id}/simulate
+// ---------------------------------------------------------------------------
+
+export interface SimulationScenario {
+  id: string;
+  name: string;
+  subtitle: string;
+  risk_score: number;
+  violations: number;
+  financial_impact: string;
+  financial_impact_k: number;
+  approval_required: string;
+  expected_outcome: string;
+  confidence: number;
+  exec_time: string;
+  resource_need: string;
+  color: 'red' | 'orange' | 'green';
+  resolvedIssues: string[];
+  remainingIssues: string[];
+  rationale?: string;
+}
+
+export interface SimulationResponse {
+  decision_id: string;
+  simulations_run: number;
+  avg_risk_reduction_pct: number;
+  scenarios: SimulationScenario[];
+}
+
+export interface RiskHistoryResponse {
+  decision_id: string;
+  months: string[];
+  series: Record<string, number[]>;
+}
+
+// ---------------------------------------------------------------------------
+// Evidence Explorer — GET /v1/decisions/{id}/evidence
+// ---------------------------------------------------------------------------
+
+export interface EvidenceItem {
+  id: string;
+  source: string;
+  type: string;
+  type_color: string;
+  confidence: number;
+  relevance: 'Critical' | 'High' | 'Medium' | 'Low';
+  timestamp: string;
+  status: 'Verified' | 'Pending' | 'External';
+  summary: string;
+  decision_relevance: string;
+}
+
+export interface EvidenceResponse {
+  decision_id: string;
+  total: number;
+  last_updated: string;
+  items: EvidenceItem[];
+}
+
+// ---------------------------------------------------------------------------
+// Agent Boundaries — GET /v1/workspace/agents
+// ---------------------------------------------------------------------------
+
+export type AgentAutonomy = 'Policy Bound' | 'Conditional' | 'Human Controlled' | 'Autonomous';
+
+export interface AgentItem {
+  id: string;
+  company_id: string;
+  name: string;
+  name_en?: string;
+  department: string;
+  department_en?: string;
+  autonomy: AgentAutonomy;
+  risk_threshold: number;
+  financial_limit: number;
+  status: 'Active' | 'Restricted' | 'Inactive';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentsResponse {
+  items: AgentItem[];
+  total: number;
+}
+
+export interface EscalationRule {
+  id: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM';
+  trigger: string;
+  action: string;
+  responsible: string;
+}
+
+export interface EscalationRulesResponse {
+  items: EscalationRule[];
 }
