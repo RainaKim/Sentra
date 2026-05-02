@@ -27,4 +27,4 @@ export const APP_URL: string =
 
 /** Full Google OAuth URL including the redirect_uri so the backend knows where to send the user back. */
 export const googleAuthUrl: string =
-  `${API_BASE_URL}/v1/auth/google?redirect_uri=${encodeURIComponent(APP_URL)}`;
+  `${API_BASE_URL}/v1/auth/google?redirect_uri=${encodeURIComponent(`${APP_URL}/auth/callback`)}`;

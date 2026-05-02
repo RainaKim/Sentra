@@ -252,9 +252,9 @@ export function ReasoningTimeline() {
             <div className="w-1.5 h-5 bg-gradient-to-b from-gray-800 to-gray-900 rounded-sm mt-0.5"></div>
             <div className="w-1.5 h-5 bg-gradient-to-b from-gray-900 to-black rounded-sm"></div>
           </div>
-          <a href="/" className="font-bold text-sm tracking-wider text-gray-900">
+          <button onClick={() => navigate('/workspace')} className="font-bold text-sm tracking-wider text-gray-900 hover:opacity-80 transition-opacity">
             DecisionGovernance AI
-          </a>
+          </button>
         </div>
         <div className="ml-6 flex items-center gap-1 text-xs text-gray-400">
           <span>Platform</span>

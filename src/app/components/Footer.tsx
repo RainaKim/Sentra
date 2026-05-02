@@ -1,28 +1,44 @@
+import Logo from "./Logo";
+
 export function Footer() {
   return (
-    <footer className="border-t border-gray-200 bg-gray-50/50">
-      <div className="max-w-[1440px] mx-auto px-16 py-12">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          {/* Logo + tagline */}
-          <div className="flex items-center gap-3">
-            <div className="flex gap-1">
-              <div className="w-2 h-8 bg-gradient-to-b from-gray-800 to-gray-700 rounded-sm"></div>
-              <div className="w-2 h-8 bg-gradient-to-b from-gray-700 to-gray-600 rounded-sm mt-1"></div>
-              <div className="w-2 h-8 bg-gradient-to-b from-gray-600 to-gray-500 rounded-sm"></div>
-            </div>
-            <div>
-              <span className="text-lg font-bold tracking-tight text-gray-900">
-                DecisionGovernance AI
-              </span>
-              <p className="text-xs text-gray-400">
-                Enterprise governance layer for AI decision-making
-              </p>
-            </div>
+    <footer className="bg-[#0B0F1A] border-t py-12 px-6" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+      <div className="max-w-7xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-10 mb-10">
+          {/* Column 1: Brand */}
+          <div>
+            <Logo variant="dark" className="mb-3" />
+            <p className="text-sm text-gray-500 max-w-xs leading-relaxed">
+              Enterprise AI governance infrastructure. Validates AI decisions before execution — audit trail, compliance, approval workflows.
+            </p>
           </div>
 
-          <p className="text-sm text-gray-400">
-            &copy; 2026 DecisionGovernance AI. All rights reserved.
-          </p>
+          {/* Column 2: Product */}
+          <div>
+            <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Product</h4>
+            <ul className="space-y-2.5">
+              <li><a href="/#problem-pipeline" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">How It Works</a></li>
+              <li><a href="/#why-us" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Why Us</a></li>
+              <li><a href="/#product-modules" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Product Modules</a></li>
+              <li><a href="/login" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Console</a></li>
+            </ul>
+          </div>
+
+          {/* Column 3: Company */}
+          <div>
+            <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Company</h4>
+            <ul className="space-y-2.5">
+              <li><a href="mailto:contact@decisiongovernance.ai" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Contact</a></li>
+              <li><a href="mailto:contact@decisiongovernance.ai?subject=Security%20Overview" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Security</a></li>
+              <li><a href="/privacy" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Privacy Policy</a></li>
+              <li><a href="/terms" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">Terms of Service</a></li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="border-t pt-6 flex flex-col sm:flex-row items-center justify-between gap-3" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+          <p className="text-xs text-gray-400">© {new Date().getFullYear()} DecisionGovernance AI. All rights reserved.</p>
+          <p className="text-xs text-gray-400">Built for enterprise AI governance.</p>
         </div>
       </div>
     </footer>

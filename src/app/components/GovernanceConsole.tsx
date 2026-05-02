@@ -14,7 +14,7 @@ import { ReactFlowProvider } from "reactflow";
 import { DecisionPackReport } from "./DecisionPackReport";
 import { RiskScoringPanel } from "./RiskScoringPanel";
 import { runDecisionFlow } from "../../api/decisionRunner";
-import { getCompanies } from "../../api/client";
+import { getCompanies, getDecision } from "../../api/client";
 import { OntologyGraph } from "./ontology/OntologyGraph";
 import type { DecisionResponse, DecisionGoal, DecisionKPI, DecisionOwner, DecisionRisk, GraphPayloadNode } from "../../api/types";
 import { EvidenceList } from "./governance/EvidenceList";
@@ -22,7 +22,7 @@ import { EvidenceToggle } from "./governance/EvidenceToggle";
 
 // Demo fallback text shown when navigating directly to /console
 const DEMO_INPUT =
-  'unknown';
+  'Approve reallocation of $2.4M from infrastructure reserve to accelerate Q3 cloud migration project. Requires sign-off from CFO and IT Director. Project timeline: 6 weeks.';
 
 // Korean → English industry name translation (for breadcrumb pre-fetch phase)
 const INDUSTRY_KO_TO_EN: Record<string, string> = {
@@ -869,7 +869,7 @@ export function GovernanceConsole() {
   const location = useLocation();
   const consolNavigate = useNavigate();
   const { t, lang } = useLang();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const locationFlowState = (location.state ?? null) as {
     companyId?: string;
     decisionText?: string;
@@ -879,6 +879,8 @@ export function GovernanceConsole() {
     department?: string;
     departmentEn?: string;
     workspaceDecisionId?: string;
+    /** Set when navigating from a validated/blocked workspace decision — skip re-run, load this result */
+    existingDecisionId?: string;
   } | null;
 
   // If the user navigated back without state (tab switch), restore from cache.
@@ -889,6 +891,10 @@ export function GovernanceConsole() {
     || incomingKey === consoleCache.cacheKey      // same decision re-opened
   );
   const flowState = cacheHit ? consoleCache!.flowState : locationFlowState;
+
+  // Derive effective company/decision so real API fires even when navigating directly to /console
+  const effectiveCompanyId = flowState?.companyId ?? user?.company_id ?? undefined;
+  const effectiveDecisionText = flowState?.decisionText ?? DEMO_INPUT;
 
   // Clear stale cache when a genuinely new decision arrives
   if (incomingKey !== null && consoleCache !== null && incomingKey !== consoleCache.cacheKey) {
@@ -949,38 +955,58 @@ export function GovernanceConsole() {
     // Skip re-running if we restored from cache (tab navigation)
     if (cacheHit) return;
 
+    // ── Existing result path ──────────────────────────────────────────────────
+    // When coming from a validated/blocked workspace decision, load the already-
+    // completed governance result instead of re-running the pipeline.
+    const existingId = locationFlowState?.existingDecisionId;
+    if (existingId) {
+      setAnalysisStep(4);
+      setTraceLog([{ text: '[결과 로드] 기존 거버넌스 결과를 불러오는 중...', color: 'text-blue-300' }]);
+      getDecision(existingId, token ?? undefined, lang)
+        .then((result) => {
+          setDecisionResult(result);
+          setOverlayDismissed(true);
+          setTraceLog([{ text: '[결과 로드] 의사결정 결과 로드 완료', color: 'text-green-300' }]);
+        })
+        .catch((err: Error) => {
+          setFlowError(`Failed to load existing result: ${err.message}`);
+          setOverlayDismissed(true);
+        });
+      return;
+    }
+
     // If an in-flight analysis is already running for this key, just subscribe — don't re-launch
     const thisKey = consoleCacheKey(flowState);
     if (thisKey && getInflightKey() === thisKey) return;
 
     // Stage → trace log label/color mapping
     const STAGE_LOG: Record<string, { prefix: string; color: string }> = {
-      extracting:             { prefix: '[정보 추출]',   color: 'text-blue-600' },
-      evaluating_governance:  { prefix: '[정책 검토]',   color: 'text-amber-600' },
-      building_graph:         { prefix: '[관계 분석]',   color: 'text-blue-600' },
-      reasoning:              { prefix: '[심층 분석]',   color: 'text-purple-600' },
-      building_decision_pack: { prefix: '[결과 생성]',   color: 'text-green-600' },
+      extracting:             { prefix: '[Extraction]',   color: 'text-blue-300' },
+      evaluating_governance:  { prefix: '[Policy]',       color: 'text-amber-300' },
+      building_graph:         { prefix: '[Graph]',        color: 'text-blue-300' },
+      reasoning:              { prefix: '[Analysis]',     color: 'text-purple-300' },
+      building_decision_pack: { prefix: '[Decision]',    color: 'text-green-300' },
     };
     const STAGE_NAMES: Record<string, string> = {
-      extracting: '의사결정 정보 추출 중',
-      evaluating_governance: '거버넌스 정책 검토 중',
-      building_graph: '구성 요소 관계 분석 중',
-      reasoning: '전략 정합성 심층 분석 중',
-      building_decision_pack: '의사결정 보고서 생성 중',
+      extracting: 'Extracting decision context and stakeholders...',
+      evaluating_governance: 'Reviewing active governance policy set...',
+      building_graph: 'Mapping goals and cost nodes to decision graph...',
+      reasoning: 'Analyzing strategic alignment and risk factors...',
+      building_decision_pack: 'Generating governance verdict and audit pack...',
     };
 
-    if (flowState?.companyId && flowState?.decisionText) {
+    if (effectiveCompanyId) {
       // Fallback timers — advance the stepper visually even if the backend
       // doesn't emit intermediate step events. Real SSE events override these
       // (setAnalysisStep uses Math.max so they can only move forward).
       const fallbackTimers: ReturnType<typeof setTimeout>[] = [
         setTimeout(() => {
           setAnalysisStep((prev) => Math.max(prev, 2));
-          setTraceLog((prev) => [...prev, { text: '[정책 검토] 거버넌스 정책 검토 중...', color: 'text-amber-600' }]);
+          setTraceLog((prev) => [...prev, { text: '[Policy] Reviewing active governance policy set...', color: 'text-amber-300' }]);
         }, 4000),
         setTimeout(() => {
           setAnalysisStep((prev) => Math.max(prev, 3));
-          setTraceLog((prev) => [...prev, { text: '[심층 분석] 전략 정합성 분석 중...', color: 'text-purple-600' }]);
+          setTraceLog((prev) => [...prev, { text: '[Analysis] Analyzing strategic alignment and risk factors...', color: 'text-purple-300' }]);
         }, 10000),
       ];
 
@@ -991,8 +1017,8 @@ export function GovernanceConsole() {
 
       const cancel = runDecisionFlow(
         {
-          companyId: flowState.companyId,
-          decisionText: flowState.decisionText,
+          companyId: effectiveCompanyId,
+          decisionText: effectiveDecisionText,
           token: token ?? undefined,
           lang,
           agentName: flowState.agentName,
@@ -1024,15 +1050,6 @@ export function GovernanceConsole() {
           },
           onComplete: (result) => {
             fallbackTimers.forEach(clearTimeout);
-            console.log('[GovernanceConsole] Full decision result:', result);
-            console.log('[GovernanceConsole] goals_kpis:', (result as Record<string, unknown>).goals_kpis);
-            console.log('[GovernanceConsole] graph_payload:', result.graph_payload);
-            console.log('[GovernanceConsole] graph_payload.nodes:', result.graph_payload?.nodes);
-            console.log('[GovernanceConsole] decision.goals:', result.decision?.goals);
-            console.log('[GovernanceConsole] decision.kpis:', result.decision?.kpis);
-            console.log('[GovernanceConsole] decision.owners:', result.decision?.owners);
-            console.log('[GovernanceConsole] extraction_metadata:', result.extraction_metadata);
-            console.log('[GovernanceConsole] derived_attributes:', result.derived_attributes);
 
             // Hardcoded scenario: specific input text gets specific risk data
             if (flowState.decisionText === "북미 시장 점유율 확대를 위한 광고비 2.5억 원 추가 요청. 현재 부서 잔여 예산 5,000만 원. 전사 KPI는 글로벌 확장임.") {
@@ -1062,14 +1079,14 @@ export function GovernanceConsole() {
               const statusKr = STATUS_KR[rawStatus] ?? rawStatus;
               const isViolation = rawStatus === 'VIOLATION';
               const isTriggered = rawStatus === 'TRIGGERED';
-              const color = isViolation ? 'text-red-600' : isTriggered ? 'text-amber-600' : 'text-green-600';
+              const color = isViolation ? 'text-red-400' : isTriggered ? 'text-amber-300' : 'text-green-300';
               const label = rule.name ?? rule.description ?? rule.rule_id ?? '';
               const text = `[정책 검토] ${rule.rule_id ? rule.rule_id + ' ' : ''}${statusKr}: ${label}`;
               return { text, color };
             });
             const finalTraceLog = [
               ...traceLogRef.current,
-              { text: '[결과 생성] 의사결정 보고서 생성 완료', color: 'text-green-600' },
+              { text: '[결과 생성] 의사결정 보고서 생성 완료', color: 'text-green-300' },
               ...ruleEntries,
             ];
             setTraceLog(finalTraceLog);
@@ -1092,7 +1109,7 @@ export function GovernanceConsole() {
             setAnalysisStep(4); // advance UI so it doesn't hang
             setTraceLog((prev) => [
               ...prev,
-              { text: `[오류] ${err.message}`, color: 'text-red-600' },
+              { text: `[오류] ${err.message}`, color: 'text-red-400' },
             ]);
             clearInflight();
           },
@@ -1113,33 +1130,33 @@ export function GovernanceConsole() {
           setAnalysisStep(1);
           setTraceLog((prev) => [
             ...prev,
-            { text: '[정보 추출] 의사결정 관련 항목 분석 완료', color: 'text-blue-600' },
-            { text: '[관계 분석] 목표 → G1, 비용 → 150,000 매핑 완료', color: 'text-blue-600' },
+            { text: '[Extraction] Decision context and stakeholders identified', color: 'text-blue-300' },
+            { text: '[Graph] Goals and cost nodes mapped to decision graph', color: 'text-blue-300' },
           ]);
         }, 800),
         setTimeout(() => {
           setAnalysisStep(2);
           setTraceLog((prev) => [
             ...prev,
-            { text: '[정책 검토] R1 검토 완료 — 트리거됨 (CFO 승인 필요)', color: 'text-amber-600' },
-            { text: '[정책 검토] R2 검토 완료 — 트리거됨 (CTO 검토 필요)', color: 'text-amber-600' },
-            { text: '[정책 검토] R5 위반 — 데이터 저장 위치 규정 미준수', color: 'text-red-600' },
+            { text: '[Policy] R1 reviewed — triggered (CFO sign-off required)', color: 'text-amber-300' },
+            { text: '[Policy] R2 reviewed — triggered (IT Director review required)', color: 'text-amber-300' },
+            { text: '[Policy] R5 violation — budget reallocation threshold exceeded', color: 'text-red-400' },
           ]);
         }, 2200),
         setTimeout(() => {
           setAnalysisStep(3);
           setTraceLog((prev) => [
             ...prev,
-            { text: '[심층 분석] 전략 정합성 분석 중...', color: 'text-purple-600' },
-            { text: '[심층 분석] 목표 충돌 감지 — G1과 G3 상충', color: 'text-purple-600' },
-            { text: '[심층 분석] 위험 증폭 요인 — GDPR + 데이터 저장 위치', color: 'text-red-600' },
+            { text: '[Analysis] Analyzing strategic alignment and risk factors...', color: 'text-purple-300' },
+            { text: '[Analysis] Goal conflict detected — G1 and G3 misaligned', color: 'text-purple-300' },
+            { text: '[Risk] Calculating risk exposure and threshold breach...', color: 'text-red-400' },
           ]);
         }, 3800),
         setTimeout(() => {
           setAnalysisStep(4);
           setTraceLog((prev) => [
             ...prev,
-            { text: '[결과 생성] 의사결정 보고서 생성 중...', color: 'text-green-600' },
+            { text: '[Decision] Generating governance verdict and audit pack...', color: 'text-green-300' },
           ]);
         }, 5200),
       ];
@@ -1175,22 +1192,28 @@ export function GovernanceConsole() {
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: "#F1F2F7", fontFamily: "SUIT Variable, Inter, sans-serif" }}>
+    <div className="min-h-screen" style={{ backgroundColor: "#0B0F1A", fontFamily: "SUIT Variable, Inter, sans-serif" }}>
       {/* Top Bar */}
-      <div className="h-12 bg-white border-b border-gray-200 flex items-center justify-between px-6 shadow-sm flex-shrink-0">
+      <div className="h-12 flex items-center justify-between px-6 flex-shrink-0" style={{ backgroundColor: '#0D1117', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
         {/* Left - Logo + Breadcrumb */}
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2.5">
             <div className="flex gap-0.5">
-              <div className="w-1.5 h-5 bg-gradient-to-b from-gray-700 to-gray-800 rounded-sm"></div>
-              <div className="w-1.5 h-5 bg-gradient-to-b from-gray-800 to-gray-900 rounded-sm mt-0.5"></div>
-              <div className="w-1.5 h-5 bg-gradient-to-b from-gray-900 to-black rounded-sm"></div>
+              <div className="w-1.5 h-5 rounded-sm" style={{ background: 'linear-gradient(to bottom, #818CF8, #6366F1)' }}></div>
+              <div className="w-1.5 h-5 rounded-sm mt-0.5" style={{ background: 'linear-gradient(to bottom, #6366F1, #4F46E5)' }}></div>
+              <div className="w-1.5 h-5 rounded-sm" style={{ background: 'linear-gradient(to bottom, #4F46E5, #3730A3)' }}></div>
             </div>
-            <a href="/" className="font-bold text-sm tracking-wider text-gray-900">
+            <button
+              onClick={() => consolNavigate('/workspace')}
+              className="font-bold text-sm tracking-wider transition-colors"
+              style={{ color: '#E2E8F0' }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = '#fff')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = '#E2E8F0')}
+            >
               DecisionGovernance AI
-            </a>
+            </button>
           </div>
-          <div className="flex items-center gap-1.5 text-xs text-gray-400">
+          <div className="flex items-center gap-1.5 text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
             <span className="uppercase tracking-wide font-medium">
               {lang === 'en'
                 ? (decisionResult?.company?.industry_en ?? translateIndustry(decisionResult?.company?.industry, lang) ?? translateIndustry(prefetchedCompany?.industry, lang) ?? 'Platform')
@@ -1204,25 +1227,34 @@ export function GovernanceConsole() {
             </span>
             <ChevronRight className="w-3 h-3" />
             {isAnalyzing ? (
-              <span className="text-blue-600 animate-pulse font-semibold uppercase tracking-wide">{t('console.analyzing')}</span>
+              <span className="animate-pulse font-semibold uppercase tracking-wide" style={{ color: '#818CF8' }}>{t('console.analyzing')}</span>
             ) : (
-              <span className="text-gray-700 font-semibold uppercase tracking-wide">{t('console.complete')}</span>
+              <span className="font-semibold uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.6)' }}>{t('console.complete')}</span>
             )}
           </div>
         </div>
-        <></>
+        {/* Back to workspace button */}
+        <button
+          onClick={() => consolNavigate('/workspace')}
+          className="text-xs font-medium transition-colors"
+          style={{ color: 'rgba(255,255,255,0.4)' }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.8)')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}
+        >
+          ← Workspace
+        </button>
       </div>
 
       {/* Error Banner */}
       {flowError && (
-        <div className="bg-red-50 border-b border-red-200 px-6 py-3 flex items-center justify-between">
+        <div className="px-6 py-3 flex items-center justify-between" style={{ backgroundColor: 'rgba(239,68,68,0.1)', borderBottom: '1px solid rgba(239,68,68,0.25)' }}>
           <div className="flex items-center gap-3">
-            <XCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
-            <span className="text-xs font-semibold text-red-700">
+            <XCircle className="w-4 h-4 flex-shrink-0" style={{ color: '#F87171' }} />
+            <span className="text-xs font-semibold" style={{ color: '#FCA5A5' }}>
               {t('console.errorPrefix')} {flowError}
             </span>
           </div>
-          <button onClick={() => setFlowError(null)} className="text-xs text-red-500 hover:text-red-700 font-medium">
+          <button onClick={() => setFlowError(null)} className="text-xs font-medium" style={{ color: '#F87171' }}>
             {t('console.errorDismiss')}
           </button>
         </div>
@@ -1231,20 +1263,21 @@ export function GovernanceConsole() {
       {/* Main Layout — sidebar + content */}
       <div className="flex h-[calc(100vh-3rem)]">
         {/* LEFT SIDEBAR */}
-        <div className="w-52 bg-white border-r border-gray-200 flex flex-col py-4 flex-shrink-0">
+        <div className="w-52 flex flex-col py-4 flex-shrink-0" style={{ backgroundColor: '#0B0F1A', borderRight: '1px solid rgba(255,255,255,0.07)' }}>
           <div className="px-4 mb-3">
-            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Decisions</div>
+            <div className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.25)' }}>Decisions</div>
           </div>
           <button
             onClick={() => {}}
-            className="w-full text-left px-4 py-2.5 text-xs font-medium flex items-center gap-2 bg-gray-900 text-white"
+            className="w-full text-left px-4 py-2.5 text-xs font-medium flex items-center gap-2"
+            style={{ backgroundColor: 'rgba(99,102,241,0.15)', color: '#A5B4FC', borderLeft: '2px solid #6366F1' }}
           >
-            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-white" />
+            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: '#6366F1' }} />
             Decision Console
           </button>
 
           <div className="px-4 mt-4 mb-3">
-            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Analysis Tools</div>
+            <div className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.25)' }}>Analysis Tools</div>
           </div>
           {CONSOLE_NAV_ITEMS.map((item) => (
             <button
@@ -1255,38 +1288,40 @@ export function GovernanceConsole() {
                 const did = decisionResult?.decision_id;
                 consolNavigate(did ? `${item.path}?decision_id=${encodeURIComponent(did)}` : item.path);
               }}
-              className={`w-full text-left px-4 py-2.5 text-xs font-medium transition-colors flex items-center gap-2 ${
-                isAnalyzing
-                  ? 'text-gray-300 cursor-not-allowed'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
+              className="w-full text-left px-4 py-2.5 text-xs font-medium flex items-center gap-2 transition-colors"
+              style={{
+                color: isAnalyzing ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.45)',
+                cursor: isAnalyzing ? 'not-allowed' : 'pointer',
+              }}
+              onMouseEnter={(e) => { if (!isAnalyzing) e.currentTarget.style.color = 'rgba(255,255,255,0.8)'; }}
+              onMouseLeave={(e) => { if (!isAnalyzing) e.currentTarget.style.color = 'rgba(255,255,255,0.45)'; }}
               title={isAnalyzing ? 'Analysis in progress…' : undefined}
             >
-              <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isAnalyzing ? 'bg-gray-200' : 'bg-gray-300'}`} />
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: isAnalyzing ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.3)' }} />
               {item.label}
             </button>
           ))}
 
-          <div className="mt-auto px-4 pt-4 border-t border-gray-100 mx-4">
-            <div className="text-[10px] text-gray-400 font-medium">Decision ID</div>
-            <div className="text-[10px] font-semibold text-gray-700 font-mono mt-0.5">DEC-2024-09-1847</div>
+          <div className="mt-auto px-4 pt-4 mx-4" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+            <div className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.3)' }}>Decision ID</div>
+            <div className="text-xs font-semibold font-mono mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>{decisionResult?.decision_id ?? '—'}</div>
           </div>
         </div>
 
         {/* CONTENT */}
-        <div className="flex-1 flex flex-col overflow-hidden" style={{ backgroundColor: '#F1F2F7' }}>
+        <div className="flex-1 flex flex-col overflow-hidden" style={{ backgroundColor: '#0B0F1A' }}>
         {/* Two-panel row: Graph + Validation */}
         <div className="flex flex-1 overflow-hidden">
 
         {/* CENTER PANEL - Governance Mind Map */}
         <div className="flex-1 flex flex-col overflow-hidden px-4 pt-4 pb-4">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col h-full overflow-hidden">
+          <div className="rounded-xl flex flex-col h-full overflow-hidden" style={{ backgroundColor: '#111827', border: '1px solid rgba(255,255,255,0.07)' }}>
             {/* Header */}
-            <div className="px-6 py-4 border-b border-gray-100 flex-shrink-0">
+            <div className="px-6 py-4 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
               <div className="flex items-start justify-between">
                 <div>
-                  <h1 className="text-base font-bold text-gray-900">{t('console.graph.title')}</h1>
-                  <p className="text-xs text-gray-500 mt-0.5 truncate max-w-[600px]">
+                  <h1 className="text-base font-bold" style={{ color: '#F9FAFB' }}>{t('console.graph.title')}</h1>
+                  <p className="text-xs mt-0.5 truncate max-w-[600px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
                     {lang === 'en'
                       ? (decisionResult?.agent_name_en ?? decisionResult?.agent_name ?? flowState?.agentNameEn ?? flowState?.agentName ?? 'AI Agent')
                       : (decisionResult?.agent_name ?? flowState?.agentName ?? 'AI Agent')}
@@ -1298,7 +1333,7 @@ export function GovernanceConsole() {
                 </div>
                 <div className="flex items-center gap-3">
                   {decisionResult && (
-                    <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-1 rounded border border-gray-200">
+                    <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>
                       {(() => {
                         const raw = decisionResult.decision_pack as Record<string, unknown> | undefined;
                         const summary = raw?.summary as Record<string, unknown> | undefined;
@@ -1310,11 +1345,13 @@ export function GovernanceConsole() {
                   <button
                     disabled={isAnalyzing}
                     onClick={() => !isAnalyzing && setShowDecisionPack(true)}
-                    className={`px-3 py-1.5 text-[10px] font-semibold rounded-lg transition-all ${
-                      isAnalyzing
-                        ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                        : "bg-gray-900 text-white hover:bg-gray-800"
-                    }`}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg transition-all"
+                    style={isAnalyzing
+                      ? { backgroundColor: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.25)', cursor: 'not-allowed' }
+                      : { backgroundColor: '#6366F1', color: '#fff' }
+                    }
+                    onMouseEnter={(e) => { if (!isAnalyzing) e.currentTarget.style.backgroundColor = '#4F46E5'; }}
+                    onMouseLeave={(e) => { if (!isAnalyzing) e.currentTarget.style.backgroundColor = '#6366F1'; }}
                   >
                     {isAnalyzing ? t('console.generating') : t('console.generateReport')}
                   </button>
@@ -1330,46 +1367,69 @@ export function GovernanceConsole() {
 
               {/* Progress overlay while analyzing */}
               {!overlayDismissed && (
-                <div className="absolute inset-0 bg-white flex flex-col justify-center px-10">
-                  {/* Completed breadcrumb */}
-                  {analysisStep > 0 && (
-                    <p className="text-xs text-gray-300 mb-5 font-medium tracking-wide">
-                      {[
-                        t('console.astep.1.title'),
-                        t('console.astep.2.title'),
-                        t('console.astep.3.title'),
-                        t('console.astep.4.title'),
-                      ].slice(0, analysisStep).join(' → ')}
-                    </p>
-                  )}
-                  {/* Progress bar */}
-                  <div className="mb-5">
-                    <div className="flex items-center justify-end mb-1.5">
-                      <span className="text-xs text-gray-400 font-medium">{Math.round((analysisStep / 4) * 100)}%</span>
-                    </div>
-                    <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                      <div
-                        className="h-full bg-gray-800 rounded-full transition-all duration-700 ease-in-out"
-                        style={{ width: `${Math.round((analysisStep / 4) * 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                  {/* Active step text — pulses while running, static when complete */}
+                <div className="absolute inset-0 flex flex-col justify-center items-center px-10" style={{ backgroundColor: '#111827' }}>
+                  {/* 4-node indigo step pipeline */}
                   {(() => {
-                    const steps = [
-                      { title: t('console.astep.1.title'), desc: t('console.astep.1.desc') },
-                      { title: t('console.astep.2.title'), desc: t('console.astep.2.desc') },
-                      { title: t('console.astep.3.title'), desc: t('console.astep.3.desc.default') },
-                      { title: t('console.astep.4.title'), desc: t('console.astep.4.desc.default') },
+                    const pipelineSteps = [
+                      { key: 'EXTRACT', label: 'EXTRACT' },
+                      { key: 'POLICY', label: 'POLICY' },
+                      { key: 'ANALYZE', label: 'ANALYZE' },
+                      { key: 'VERDICT', label: 'VERDICT' },
                     ];
-                    const step = steps[Math.min(analysisStep, 3)];
                     const isComplete = analysisStep >= 4;
                     return (
-                      <p className={`text-sm font-medium text-gray-600 ${isComplete ? '' : 'animate-pulse'}`}>
-                        {isComplete
-                          ? (lang === 'en' ? `${step.title} · Complete` : `${step.title} · 완료`)
-                          : `${lang === 'en' ? 'Running' : '실행 중'} ${step.title} · ${step.desc}`}
-                      </p>
+                      <div className="w-full max-w-lg">
+                        {/* Node pipeline */}
+                        <div className="flex items-center justify-between mb-8 relative">
+                          {/* Track line */}
+                          <div className="absolute top-4 left-4 right-4 h-px" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }} />
+                          {/* Progress line */}
+                          <div
+                            className="absolute top-4 left-4 h-px transition-all duration-700 ease-in-out"
+                            style={{
+                              backgroundColor: '#6366F1',
+                              width: `calc(${Math.min((analysisStep / 4) * 100, 100)}% - 2rem)`,
+                            }}
+                          />
+                          {pipelineSteps.map((step, idx) => {
+                            const done = analysisStep > idx;
+                            const active = analysisStep === idx;
+                            return (
+                              <div key={step.key} className="flex flex-col items-center gap-2 z-10">
+                                <div
+                                  className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-500"
+                                  style={{
+                                    backgroundColor: done ? '#6366F1' : active ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.05)',
+                                    border: done ? '2px solid #6366F1' : active ? '2px solid #6366F1' : '2px solid rgba(255,255,255,0.12)',
+                                    color: done ? '#fff' : active ? '#A5B4FC' : 'rgba(255,255,255,0.3)',
+                                    boxShadow: active ? '0 0 12px rgba(99,102,241,0.5)' : 'none',
+                                  }}
+                                >
+                                  {done ? '✓' : idx + 1}
+                                </div>
+                                <span className="text-xs font-semibold tracking-widest" style={{ color: done ? '#A5B4FC' : active ? '#818CF8' : 'rgba(255,255,255,0.25)' }}>
+                                  {step.label}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {/* Status text */}
+                        {(() => {
+                          const stepLabels = [t('console.astep.1.title'), t('console.astep.2.title'), t('console.astep.3.title'), t('console.astep.4.title')];
+                          const stepDescs = [t('console.astep.1.desc'), t('console.astep.2.desc'), t('console.astep.3.desc.default'), t('console.astep.4.desc.default')];
+                          const idx = Math.min(analysisStep, 3);
+                          return (
+                            <p className={`text-sm text-center font-medium ${isComplete ? '' : 'animate-pulse'}`} style={{ color: isComplete ? '#A5B4FC' : 'rgba(255,255,255,0.6)' }}>
+                              {isComplete
+                                ? (lang === 'en' ? `${stepLabels[idx]} · Complete` : `${stepLabels[idx]} · 완료`)
+                                : `${lang === 'en' ? 'Running' : '실행 중'} ${stepLabels[idx]} · ${stepDescs[idx]}`}
+                            </p>
+                          );
+                        })()}
+                        {/* Percent */}
+                        <p className="text-xs text-center mt-2" style={{ color: 'rgba(255,255,255,0.25)' }}>{Math.round((analysisStep / 4) * 100)}%</p>
+                      </div>
                     );
                   })()}
                 </div>
@@ -1383,13 +1443,13 @@ export function GovernanceConsole() {
 
         {/* RIGHT PANEL - Rules, Approvals, Trace Log */}
         <div className="w-96 flex flex-col pt-4 pb-4 pr-4 flex-shrink-0">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col h-full overflow-hidden">
+          <div className="rounded-xl flex flex-col h-full overflow-hidden" style={{ backgroundColor: '#111827', border: '1px solid rgba(255,255,255,0.07)' }}>
             {/* Header */}
-            <div className="px-5 py-4 border-b border-gray-100 flex-shrink-0">
+            <div className="px-5 py-4 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">{t('console.right.title')}</span>
+                <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.3)' }}>{t('console.right.title')}</span>
               </div>
-              <h2 className="text-sm font-bold text-gray-900">
+              <h2 className="text-sm font-bold" style={{ color: '#F9FAFB' }}>
                 {isAnalyzing ? t('console.analyzing') : t('console.complete')}
               </h2>
             </div>
@@ -1407,50 +1467,50 @@ export function GovernanceConsole() {
 
               if (!decisionResult) {
                 return (
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  <div className="rounded-xl p-4" style={{ backgroundColor: '#1E2433', border: '1px solid rgba(255,255,255,0.07)' }}>
+                    <div className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'rgba(255,255,255,0.35)' }}>
                       {t('console.right.verdict.title')}
                     </div>
-                    <p className="text-xs text-gray-400 italic">{t('console.right.verdict.pending')}</p>
+                    <p className="text-xs italic" style={{ color: 'rgba(255,255,255,0.25)' }}>{t('console.right.verdict.pending')}</p>
                   </div>
                 );
               }
 
               const isReview = status === 'review_required' || status === 'needs_review';
               const isApproved = status === 'approved' || status === 'complete';
-              const verdictBg = isReview ? 'bg-amber-50' : isApproved ? 'bg-green-50' : 'bg-gray-50';
-              const verdictBorder = isReview ? 'border-amber-200' : isApproved ? 'border-green-200' : 'border-gray-200';
+              const verdictBorderColor = isReview ? 'rgba(245,158,11,0.3)' : isApproved ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.07)';
+              const verdictBg = isReview ? 'rgba(245,158,11,0.08)' : isApproved ? 'rgba(16,185,129,0.08)' : '#1E2433';
               const statusText = isReview ? t('console.right.status.review') : isApproved ? t('console.right.status.approved') : (status ?? '').toUpperCase().replace(/_/g, ' ');
-              const statusColor = isReview ? 'text-amber-700' : isApproved ? 'text-green-700' : 'text-gray-700';
+              const statusColor = isReview ? '#FCD34D' : isApproved ? '#6EE7B7' : '#F9FAFB';
               const aggregateBand = decisionResult?.risk_scoring?.aggregate?.band?.toUpperCase();
               const bandKey = aggregateBand
                 ? `risk.band.${aggregateBand.toLowerCase()}`
                 : riskScore >= 7 ? 'risk.band.high' : riskScore >= 4 ? 'risk.band.medium' : 'risk.band.low';
               const bandLabel = t(bandKey) !== bandKey ? t(bandKey) : (aggregateBand ?? 'LOW');
-              const riskBand = (aggregateBand === 'CRITICAL' || aggregateBand === 'HIGH' || riskScore >= 7)
-                ? { label: bandLabel, cls: aggregateBand === 'CRITICAL' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700' }
+              const riskBandStyle = (aggregateBand === 'CRITICAL' || aggregateBand === 'HIGH' || riskScore >= 7)
+                ? { bg: aggregateBand === 'CRITICAL' ? 'rgba(239,68,68,0.15)' : 'rgba(249,115,22,0.15)', color: aggregateBand === 'CRITICAL' ? '#FCA5A5' : '#FDBA74' }
                 : (aggregateBand === 'MEDIUM' || riskScore >= 4)
-                ? { label: bandLabel, cls: 'bg-amber-100 text-amber-700' }
-                : { label: bandLabel, cls: 'bg-green-100 text-green-700' };
+                ? { bg: 'rgba(245,158,11,0.15)', color: '#FCD34D' }
+                : { bg: 'rgba(16,185,129,0.15)', color: '#6EE7B7' };
 
               return (
-                <div className={`rounded-xl border p-4 space-y-2 animate-in fade-in duration-500 ${verdictBg} ${verdictBorder}`}>
+                <div className="rounded-xl p-4 space-y-2 animate-in fade-in duration-500" style={{ backgroundColor: verdictBg, border: `1px solid ${verdictBorderColor}` }}>
                   <div className="flex items-center justify-between">
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.35)' }}>
                       {t('console.right.verdict.title')}
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${riskBand.cls}`}>
-                      {riskBand.label}
+                    <span className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: riskBandStyle.bg, color: riskBandStyle.color }}>
+                      {bandLabel}
                     </span>
                   </div>
-                  <div className={`text-sm font-bold ${statusColor}`}>
+                  <div className="text-lg font-bold" style={{ color: statusColor }}>
                     {statusText || '—'}
                   </div>
                   {firedRules.length > 0 && (
                     <ul className="space-y-0.5 pt-1">
                       {firedRules.slice(0, 2).map((rule, i) => (
-                        <li key={rule.rule_id ?? i} className="text-xs text-gray-600 flex items-start gap-1.5">
-                          <span className="text-gray-400 flex-shrink-0 mt-0.5">·</span>
+                        <li key={rule.rule_id ?? i} className="text-xs flex items-start gap-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                          <span className="flex-shrink-0 mt-0.5" style={{ color: 'rgba(255,255,255,0.25)' }}>·</span>
                           <span className="break-words leading-relaxed">
                             {lang === 'en'
                               ? (rule.description_en ?? rule.name_en ?? rule.description ?? rule.name ?? rule.rule_id)
@@ -1468,17 +1528,20 @@ export function GovernanceConsole() {
             {showRules && (decisionResult?.governance?.approval_chain ?? []).length > 0 && (
               <div className="space-y-2 animate-in fade-in duration-500">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.35)' }}>
                     {t('console.right.approval.title')}
                   </h3>
                   <button
                     onClick={() => { const did = decisionResult?.decision_id; consolNavigate(did ? `/evidence-explorer?decision_id=${encodeURIComponent(did)}` : '/evidence-explorer'); }}
-                    className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+                    className="text-xs transition-colors"
+                    style={{ color: 'rgba(255,255,255,0.3)' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.6)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}
                   >
                     {lang === 'en' ? 'View Details →' : '상세 보기 →'}
                   </button>
                 </div>
-                <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
+                <div className="rounded-lg overflow-hidden" style={{ backgroundColor: '#1E2433', border: '1px solid rgba(255,255,255,0.07)' }}>
                   {(decisionResult?.governance?.approval_chain ?? []).map((raw, idx, arr) => {
                     const obj = raw && typeof raw === 'object' ? raw as Record<string, unknown> : null;
                     const role = obj?.role ? String(obj.role) : obj?.name ? String(obj.name) : '—';
@@ -1486,11 +1549,11 @@ export function GovernanceConsole() {
                     const statusLabel = rawStatus === 'optional'
                       ? t('console.right.approval.status.optional')
                       : t('console.right.approval.status.pending');
-                    const statusColor = rawStatus === 'optional' ? 'text-gray-400' : 'text-amber-600';
+                    const statusColor = rawStatus === 'optional' ? 'rgba(255,255,255,0.3)' : '#FCD34D';
                     return (
-                      <div key={idx} className={`px-4 py-2.5 flex items-center justify-between ${idx < arr.length - 1 ? 'border-b border-gray-200' : ''}`}>
-                        <span className="text-xs text-gray-700">{role}</span>
-                        <span className={`text-xs font-semibold ${statusColor}`}>{statusLabel}</span>
+                      <div key={idx} className="px-4 py-2.5 flex items-center justify-between" style={idx < arr.length - 1 ? { borderBottom: '1px solid rgba(255,255,255,0.06)' } : {}}>
+                        <span className="text-xs" style={{ color: 'rgba(255,255,255,0.65)' }}>{role}</span>
+                        <span className="text-xs font-semibold" style={{ color: statusColor }}>{statusLabel}</span>
                       </div>
                     );
                   })}
@@ -1508,24 +1571,27 @@ export function GovernanceConsole() {
               return (
                 <div className="space-y-2 animate-in fade-in duration-500">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.35)' }}>
                       {t('console.right.rules.title')}
                     </h3>
                     <button
                       onClick={() => { const did = decisionResult?.decision_id; consolNavigate(did ? `/evidence-explorer?decision_id=${encodeURIComponent(did)}` : '/evidence-explorer'); }}
-                      className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+                      className="text-xs transition-colors"
+                      style={{ color: 'rgba(255,255,255,0.3)' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.6)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}
                     >
                       {lang === 'en' ? 'View Evidence →' : '근거 보기 →'}
                     </button>
                   </div>
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="rounded-lg overflow-hidden" style={{ backgroundColor: '#1E2433', border: '1px solid rgba(255,255,255,0.07)' }}>
                     {firedRules.map((rule, idx) => (
-                      <div key={rule.rule_id ?? idx} className={`px-4 py-2.5 flex items-start justify-between gap-2 ${idx < firedRules.length - 1 ? 'border-b border-gray-200' : ''}`}>
-                        <span className="text-xs text-gray-700 leading-relaxed">
-                          {rule.rule_id && <span className="font-mono text-gray-400 mr-1">{rule.rule_id}</span>}
+                      <div key={rule.rule_id ?? idx} className="px-4 py-2.5 flex items-start justify-between gap-2" style={idx < firedRules.length - 1 ? { borderBottom: '1px solid rgba(255,255,255,0.06)' } : {}}>
+                        <span className="text-xs leading-relaxed" style={{ color: 'rgba(255,255,255,0.65)' }}>
+                          {rule.rule_id && <span className="font-mono mr-1" style={{ color: 'rgba(255,255,255,0.3)' }}>{rule.rule_id}</span>}
                           {lang === 'en' ? (rule.name_en ?? rule.name ?? rule.rule_id) : (rule.name ?? rule.rule_id)}
                         </span>
-                        <span className="text-[10px] font-bold text-red-500 flex-shrink-0 mt-0.5">
+                        <span className="text-xs font-bold flex-shrink-0 mt-0.5" style={{ color: '#F87171' }}>
                           {lang === 'en' ? 'Triggered' : '트리거'}
                         </span>
                       </div>
@@ -1539,31 +1605,34 @@ export function GovernanceConsole() {
             {decisionResult?.risk_scoring && (() => {
               const agg = decisionResult.risk_scoring!.aggregate;
               const dims = (decisionResult.risk_scoring!.dimensions ?? []).slice(0, 2);
-              const bandColor = agg.band === 'CRITICAL' ? 'text-red-600' : agg.band === 'HIGH' ? 'text-orange-600' : agg.band === 'MEDIUM' ? 'text-amber-600' : 'text-green-600';
+              const bandColor = agg.band === 'CRITICAL' ? '#FCA5A5' : agg.band === 'HIGH' ? '#FDBA74' : agg.band === 'MEDIUM' ? '#FCD34D' : '#6EE7B7';
               return (
                 <div className="space-y-2 animate-in fade-in duration-500">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.35)' }}>
                       {t('console.right.risk.section')}
                     </h3>
                     <button
                       onClick={() => { const did = decisionResult?.decision_id; consolNavigate(did ? `/evidence-explorer?decision_id=${encodeURIComponent(did)}` : '/evidence-explorer'); }}
-                      className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+                      className="text-xs transition-colors"
+                      style={{ color: 'rgba(255,255,255,0.3)' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.6)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}
                     >
                       {lang === 'en' ? 'View Evidence →' : '근거 보기 →'}
                     </button>
                   </div>
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
-                    <div className="px-4 py-2.5 flex items-center justify-between border-b border-gray-200">
-                      <span className="text-xs text-gray-500">{lang === 'en' ? 'Risk Score' : '위험도'}</span>
-                      <span className={`text-xs font-bold ${bandColor}`}>{agg.score} / 100</span>
+                  <div className="rounded-lg overflow-hidden" style={{ backgroundColor: '#1E2433', border: '1px solid rgba(255,255,255,0.07)' }}>
+                    <div className="px-4 py-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                      <span className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>{lang === 'en' ? 'Risk Score' : '위험도'}</span>
+                      <span className="text-xs font-bold" style={{ color: bandColor }}>{agg.score} / 100</span>
                     </div>
                     {dims.map((dim, idx) => {
-                      const dimBandColor = dim.band === 'CRITICAL' ? 'text-red-500' : dim.band === 'HIGH' ? 'text-orange-500' : dim.band === 'MEDIUM' ? 'text-amber-500' : 'text-green-500';
+                      const dimBandColor = dim.band === 'CRITICAL' ? '#FCA5A5' : dim.band === 'HIGH' ? '#FDBA74' : dim.band === 'MEDIUM' ? '#FCD34D' : '#6EE7B7';
                       return (
-                        <div key={idx} className={`px-4 py-2.5 flex items-center justify-between ${idx < dims.length - 1 ? 'border-b border-gray-200' : ''}`}>
-                          <span className="text-xs text-gray-600">{lang === 'en' ? (dim.label_en ?? dim.label) : dim.label}</span>
-                          <span className={`text-xs font-semibold ${dimBandColor}`}>{dim.band}</span>
+                        <div key={idx} className="px-4 py-2.5 flex items-center justify-between" style={idx < dims.length - 1 ? { borderBottom: '1px solid rgba(255,255,255,0.06)' } : {}}>
+                          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.55)' }}>{lang === 'en' ? (dim.label_en ?? dim.label) : dim.label}</span>
+                          <span className="text-xs font-semibold" style={{ color: dimBandColor }}>{dim.band}</span>
                         </div>
                       );
                     })}
@@ -1574,20 +1643,38 @@ export function GovernanceConsole() {
 
             {/* 5. External Signals - compact summary */}
             {decisionResult && (
-              <div className="flex items-center justify-between py-2 border-t border-gray-100">
+              <div className="flex items-center justify-between py-2" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
                 <div>
-                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-0.5">
+                  <span className="text-xs font-semibold uppercase tracking-wider block mb-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>
                     {t('console.right.signals.title')}
                   </span>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
                     {lang === 'en' ? 'External context reviewed' : '외부 신호 검토 완료'}
                   </span>
                 </div>
                 <button
                   onClick={() => { const did = decisionResult?.decision_id; consolNavigate(did ? `/evidence-explorer?decision_id=${encodeURIComponent(did)}` : '/evidence-explorer'); }}
-                  className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 ml-2"
+                  className="text-xs flex-shrink-0 ml-2 transition-colors"
+                  style={{ color: 'rgba(255,255,255,0.3)' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.6)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}
                 >
                   {lang === 'en' ? 'View →' : '보기 →'}
+                </button>
+              </div>
+            )}
+
+            {/* Post-analysis: Back to Workspace CTA */}
+            {!isAnalyzing && decisionResult && (
+              <div className="pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+                <button
+                  onClick={() => consolNavigate('/workspace')}
+                  className="w-full py-2 rounded-lg text-xs font-semibold transition-all"
+                  style={{ backgroundColor: 'rgba(99,102,241,0.12)', color: '#A5B4FC', border: '1px solid rgba(99,102,241,0.25)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(99,102,241,0.22)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(99,102,241,0.12)'; }}
+                >
+                  ← Back to Workspace
                 </button>
               </div>
             )}
