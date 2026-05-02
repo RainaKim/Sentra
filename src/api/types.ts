@@ -396,6 +396,8 @@ export type WorkspaceDecisionStatus = 'pending' | 'blocked' | 'validated';
 
 export interface WorkspaceDecision {
   decision_id: string;
+  /** Governance analysis decision_id — present when status is validated or blocked */
+  analysis_decision_id?: string | null;
   agent_name: string;
   agent_name_en?: string;
   department: string;

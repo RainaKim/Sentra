@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-import { AlertTriangle, FileSearch, Shield } from "lucide-react";
+import { AlertTriangle, FileSearch, Shield, Landmark, HeartPulse, Building2 } from "lucide-react";
 
 const problems = [
   {
@@ -70,6 +70,50 @@ export function ProblemSection() {
             still lack a system that can validate those decisions before
             execution.
           </p>
+        </div>
+
+        {/* Industry use cases */}
+        <div
+          className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12"
+          style={{
+            opacity: visible ? 1 : 0,
+            transform: visible ? "translateY(0)" : "translateY(16px)",
+            transition: "all 0.5s ease-out 0.1s",
+          }}
+        >
+          {[
+            {
+              icon: Landmark,
+              industry: "Financial Services",
+              example: "A trading AI proposes a $2.4M infrastructure reallocation. DecisionGovernance validates it against budget policy, CFO approval thresholds, and SOX audit requirements — in under 10 seconds.",
+            },
+            {
+              icon: HeartPulse,
+              industry: "Healthcare",
+              example: "A clinical AI recommends a protocol change affecting patient care pathways. DecisionGovernance maps it against HIPAA compliance rules and medical governance boundaries before any action is taken.",
+            },
+            {
+              icon: Building2,
+              industry: "Enterprise Operations",
+              example: "An AI agent proposes a vendor contract renewal. DecisionGovernance checks procurement policy, approval hierarchy, and risk exposure — producing a Decision Pack for the legal and finance review.",
+            },
+          ].map(({ icon: Icon, industry, example }) => (
+            <div
+              key={industry}
+              className="rounded-xl border border-indigo-100 p-5"
+              style={{ background: "#F8F9FF" }}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: "rgba(99,102,241,0.1)" }}>
+                  <Icon className="w-3.5 h-3.5" style={{ color: "#6366F1" }} />
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "#6366F1" }}>
+                  {industry}
+                </span>
+              </div>
+              <p className="text-[12px] text-slate-500 leading-relaxed">{example}</p>
+            </div>
+          ))}
         </div>
 
         {/* Problem cards */}

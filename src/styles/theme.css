@@ -2,6 +2,7 @@
 
 :root {
   --font-size: 16px;
+  --font-heading: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
   --background: #ffffff;
   --foreground: oklch(0.145 0 0);
   --card: #ffffff;
@@ -39,6 +40,22 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* ── Product Screen Design Tokens ──────────────────────────────────── */
+  --product-bg:              #0B0F1A;
+  --product-sidebar:         #0B0F1A;
+  --product-card:            #111827;
+  --product-card-inner:      #1E2433;
+  --product-topbar:          #0D1117;
+  --product-border:          rgba(255,255,255,0.07);
+  --product-border-mid:      rgba(255,255,255,0.10);
+  --product-border-hi:       rgba(255,255,255,0.15);
+  --product-text-primary:    #F9FAFB;
+  --product-text-secondary:  #9CA3AF;
+  --product-text-muted:      #6B7280;
+  --product-indigo:          #6366F1;
+  --product-indigo-dim:      rgba(99,102,241,0.15);
+  --product-indigo-text:     #A5B4FC;
 }
 
 .dark {
@@ -120,6 +137,75 @@
 }
 
 @layer base {
+  @keyframes bounceDown {
+    0%, 100% { transform: translateY(0); opacity: 0.4; }
+    50% { transform: translateY(8px); opacity: 1; }
+  }
+  @keyframes heroFloat {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-6px); }
+  }
+  @keyframes heroFadeUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes countUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes ontoGlow {
+    0%, 100% {
+      box-shadow: inset 0 0 0 1px rgba(99,102,241,0.30),
+                  0 0 24px rgba(99,102,241,0.16),
+                  0 0 48px rgba(99,102,241,0.07);
+    }
+    50% {
+      box-shadow: inset 0 0 0 1px rgba(99,102,241,0.48),
+                  0 0 34px rgba(99,102,241,0.26),
+                  0 0 64px rgba(99,102,241,0.13);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .onto-glow { animation: none !important; }
+  }
+
+  /* ── Verdict reveal animation ───────────────────────────────────────── */
+  @keyframes verdictReveal {
+    from { opacity: 0; transform: translateY(6px); filter: blur(2px); }
+    to   { opacity: 1; transform: translateY(0);   filter: blur(0);   }
+  }
+  .verdict-reveal {
+    animation: verdictReveal 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  /* ── Pipeline node pulse ─────────────────────────────────────────────── */
+  @keyframes pipelinePulse {
+    0%, 100% { opacity: 0.6; transform: scale(1);   }
+    50%       { opacity: 1;   transform: scale(1.3); }
+  }
+  .hero-animate {
+    opacity: 0;
+    animation: heroFadeUp 0.7s ease-out forwards;
+  }
+  .stat-animate {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  .stat-visible {
+    animation: countUp 0.6s ease-out forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hero-animate, .stat-animate, .stat-visible {
+      opacity: 1;
+      transform: none;
+      animation: none;
+    }
+  }
+
   * {
     @apply border-border outline-ring/50;
   }

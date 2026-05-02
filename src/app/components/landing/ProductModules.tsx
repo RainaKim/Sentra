@@ -15,7 +15,7 @@ const steps = [
     title: "Connect & Ingest",
     subtitle: "We build your governance knowledge base",
     description:
-      "We ingest your company documents, internal policies, org structure, and communication history. This constructs your custom ontology — the structured vocabulary that maps how decisions, goals, risks, and approvals relate in your organization.",
+      "We ingest your company documents — policies, org charts, internal communications, approval logs — and a parallel agent pipeline reverse-constructs your governance ontology. You never define rules from scratch.",
     details: [
       { icon: FileText, label: "Policy documents & compliance manuals" },
       { icon: MessageSquare, label: "Internal communications & memos" },
@@ -25,10 +25,10 @@ const steps = [
   {
     step: "02",
     icon: Settings2,
-    title: "Configure & Integrate",
-    subtitle: "We connect to your existing tools",
+    title: "Review & Validate",
+    subtitle: "We derived your governance structure — you confirm it",
     description:
-      "We integrate with the platforms your teams already use — Slack, Jira, internal APIs, and AI agent frameworks. Governance rules, risk thresholds, and approval chains are configured to match your actual organizational workflows.",
+      "The parallel agent pipeline returns your governance ontology for review. You validate what was derived from your documents, configure risk thresholds, and connect to your existing workflow tools. Typical review takes hours, not weeks.",
     details: [
       { icon: Plug, label: "Slack, Jira, Notion, internal APIs" },
       { icon: Settings2, label: "Custom governance rules & thresholds" },
@@ -71,7 +71,7 @@ export function ProductModules() {
   }, []);
 
   return (
-    <section className="bg-white py-24 px-16">
+    <section className="bg-[#F1F2F7] py-24 px-16">
       <div className="max-w-7xl mx-auto">
         {/* Section header */}
         <div className="mb-14 text-center">
@@ -117,6 +117,14 @@ export function ProductModules() {
                       </div>
                     </div>
                   </div>
+                  {s.step === "02" && (
+                    <span
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold mb-4"
+                      style={{ background: "rgba(99,102,241,0.08)", color: "#6366F1", border: "1px solid rgba(99,102,241,0.18)" }}
+                    >
+                      ⏱ Hours, not weeks
+                    </span>
+                  )}
                   <p className="text-sm text-gray-500 leading-relaxed mb-4">
                     {s.description}
                   </p>
