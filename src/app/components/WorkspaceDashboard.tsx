@@ -18,6 +18,15 @@ import type { WorkspaceMetrics, WorkspaceDecision } from "../../api/types";
 import { useAuth } from "../contexts/AuthContext";
 import { useLang } from "../contexts/LangContext";
 import { setWorkspaceDecisionsCache } from "../store/consoleCache";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./ui/alert-dialog";
 
 function statusBadge(status: WorkspaceDecision["status"], riskLevel: string, t: (k: string) => string) {
   if (status === "pending") {
@@ -251,6 +260,17 @@ export function WorkspaceDashboard() {
   const [metrics, setMetrics] = useState<WorkspaceMetrics | null>(null);
   const [decisions, setDecisions] = useState<WorkspaceDecision[]>([]);
   const [company, setCompany] = useState<import("../../api/types").Company | null>(null);
+  const [permissionOpen, setPermissionOpen] = useState(false);
+
+  const canValidate = user?.role === "ADMIN" || user?.role === "MANAGER";
+
+  const guardValidate = (run: () => void) => {
+    if (!canValidate) {
+      setPermissionOpen(true);
+      return;
+    }
+    run();
+  };
 
   useEffect(() => {
     if (!token) {
@@ -492,7 +512,7 @@ export function WorkspaceDashboard() {
               <p className="text-sm font-semibold mb-1" style={{ color: '#6B7280' }}>No decisions submitted yet</p>
               <p className="text-xs mb-6" style={{ color: '#4B5563' }}>Run your first governance check to see results here.</p>
               <button
-                onClick={() => navigate('/console')}
+                onClick={() => guardValidate(() => navigate('/console'))}
                 className="text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors"
                 style={{ background: '#6366F1' }}
                 onMouseEnter={e => (e.currentTarget.style.background = '#4F46E5')}
@@ -509,7 +529,7 @@ export function WorkspaceDashboard() {
                   decision={decision}
                   lang={lang}
                   t={t}
-                  onValidate={() => navigate("/console", {
+                  onValidate={() => guardValidate(() => navigate("/console", {
                     state: {
                       companyId: user?.company_id,
                       decisionText: decision.proposed_text_ko ?? decision.proposed_text,
@@ -520,7 +540,7 @@ export function WorkspaceDashboard() {
                       departmentEn: decision.department_en ?? decision.department,
                       workspaceDecisionId: decision.decision_id,
                     },
-                  })}
+                  }))}
                   onViewResults={() => navigate("/console", {
                     state: {
                       companyId: user?.company_id,
@@ -540,6 +560,20 @@ export function WorkspaceDashboard() {
           )}
         </div>
       </div>
+
+      <AlertDialog open={permissionOpen} onOpenChange={setPermissionOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('workspace.permission.title')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('workspace.permission.body')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction>{t('workspace.permission.ok')}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
